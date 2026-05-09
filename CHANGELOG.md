@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.0
+
+### Added
+- `help`, `--help`, and `-h` help aliases
+- Clearer CLI usage and command examples
+- Plain status prefixes for terminal output
+
+### Changed
+- Improved terminal output readability
+- Improved help screen formatting
+- Updated project version to v1.1.0
+
 ## v1.0.0
 
 ### Added

@@ -6,7 +6,7 @@ It checks Windows proxy-related settings, detects known network tools, runs prof
 
 ## Current Version
 
-v1.0.0
+v1.1.0
 
 ## Features
 
@@ -20,11 +20,13 @@ v1.0.0
 - Report comparison for before/after troubleshooting
 - Network adapter and DNS server inspection
 - Basic UDP diagnostics
+- Clear CLI help aliases and readable terminal status prefixes
 
 ## Commands
 
 ```bash
 cargo run -- status
+cargo run -- help
 cargo run -- restore
 cargo run -- report
 cargo run -- doctor discord
@@ -61,6 +63,7 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 ## Version History
 
+- v1.1.0: Improved CLI help and terminal output readability.
 - v0.1.0: Initial diagnostic prototype.
 - v0.2.0: Added restore and proxy cleanup.
 - v0.3.0: Added timestamped diagnostic report export.

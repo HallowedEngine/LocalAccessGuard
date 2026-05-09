@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const VERSION: &str = "v1.0.0";
+const VERSION: &str = "v1.1.0";
 const UDP_TEST_TARGET: &str = "1.1.1.1:53";
 const UDP_NOTE: &str = "This is a basic local UDP capability check. It does not guarantee that every game or voice service UDP path is reachable.";
 
@@ -93,12 +93,14 @@ fn main() {
     }
 
     match args[1].as_str() {
+        "help" | "--help" | "-h" => print_help(),
         "status" => status(),
         "doctor" => {
             if args.len() < 3 {
-                println!("Usage: lag doctor <profile>");
-                println!("Example: lag doctor discord");
-                println!("Example: lag doctor roblox");
+                println!("[FAILED] Missing profile name.");
+                println!("Usage: LocalAccessGuard doctor <profile>");
+                println!("Example: LocalAccessGuard doctor discord");
+                println!("Example: LocalAccessGuard doctor roblox");
                 return;
             }
 
@@ -112,8 +114,9 @@ fn main() {
         "udpcheck" => udpcheck(),
         "compare" => {
             if args.len() < 4 {
-                println!("Usage: lag compare <old_report> <new_report>");
-                println!("Example: lag compare reports\\old.txt reports\\new.txt");
+                println!("[FAILED] Missing report path.");
+                println!("Usage: LocalAccessGuard compare <old_report> <new_report>");
+                println!("Example: LocalAccessGuard compare reports\\old.txt reports\\new.txt");
                 return;
             }
 
@@ -126,28 +129,33 @@ fn main() {
 fn print_help() {
     println!("LocalAccessGuard {}", VERSION);
     println!();
+    println!("Usage:");
+    println!("  LocalAccessGuard <command>");
+    println!();
     println!("Commands:");
-    println!("  status");
-    println!("  doctor <profile>");
-    println!("  profiles");
-    println!("  validate");
-    println!("  restore");
-    println!("  report");
-    println!("  netinfo");
-    println!("  udpcheck");
-    println!("  compare <old_report> <new_report>");
+    println!("  status                          Show system proxy and process status");
+    println!("  restore                         Restore proxy/PAC/WinHTTP settings");
+    println!("  profiles                        List available JSON profiles");
+    println!("  validate                        Validate profile JSON files");
+    println!("  doctor <profile>                Run DNS/TCP diagnostics for a profile");
+    println!("  report                          Generate timestamped diagnostic report");
+    println!("  compare <old_report> <new_report> Compare two diagnostic reports");
+    println!("  netinfo                         Show active adapter and DNS information");
+    println!("  udpcheck                        Run basic UDP diagnostics");
+    println!("  help                            Show this help screen");
     println!();
     println!("Examples:");
-    println!("  doctor discord");
-    println!("  doctor roblox");
-    println!("  compare reports\\old.txt reports\\new.txt");
+    println!("  LocalAccessGuard status");
+    println!("  LocalAccessGuard doctor discord");
+    println!("  LocalAccessGuard report");
+    println!("  LocalAccessGuard compare reports\\old.txt reports\\new.txt");
 }
 
 fn profiles() {
     let entries = match profile_files() {
         Ok(entries) => entries,
         Err(_) => {
-            println!("No valid profiles found.");
+            println!("[WARNING] No valid profiles found.");
             return;
         }
     };
@@ -174,13 +182,13 @@ fn profiles() {
     }
 
     if valid_profiles.is_empty() {
-        println!("No valid profiles found.");
+        println!("[WARNING] No valid profiles found.");
         return;
     }
 
     valid_profiles.sort_by(|left, right| left.0.cmp(&right.0));
 
-    println!("Available profiles:");
+    println!("[INFO] Available profiles:");
     for (key, name) in valid_profiles {
         println!("- {}: {}", key, name);
     }
@@ -190,7 +198,7 @@ fn validate_profiles() {
     let entries = match profile_files() {
         Ok(entries) => entries,
         Err(err) => {
-            println!("Could not read profiles directory: {}", err);
+            println!("[FAILED] Could not read profiles directory: {}", err);
             return;
         }
     };
@@ -203,14 +211,17 @@ fn validate_profiles() {
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
             Err(err) => {
-                println!("{}: INVALID - could not read file: {}", display_path, err);
+                println!(
+                    "[FAILED] {}: INVALID - could not read file: {}",
+                    display_path, err
+                );
                 continue;
             }
         };
 
         match parse_and_validate_profile(&text) {
-            Ok(_) => println!("{}: OK", display_path),
-            Err(err) => println!("{}: INVALID - {}", display_path, err),
+            Ok(_) => println!("[OK] {}: OK", display_path),
+            Err(err) => println!("[FAILED] {}: INVALID - {}", display_path, err),
         }
     }
 }
@@ -267,9 +278,31 @@ fn run_udp_diagnostics() -> UdpDiagnosticResult {
 }
 
 fn print_udp_diagnostics(diagnostics: &UdpDiagnosticResult) {
-    let mut text = String::new();
-    write_udp_diagnostics(&mut text, diagnostics);
-    print!("{}", text);
+    match &diagnostics.bind_error {
+        Some(err) => {
+            println!("[FAILED] UDP socket bind: FAILED ({})", err);
+        }
+        None => {
+            println!("[OK] UDP socket bind: OK");
+        }
+    }
+
+    println!(
+        "[INFO] Local UDP socket: {}",
+        diagnostics.local_socket.as_deref().unwrap_or("Unavailable")
+    );
+
+    match &diagnostics.connect_error {
+        Some(err) => {
+            println!("[FAILED] UDP connect test: FAILED ({})", err);
+        }
+        None => {
+            println!("[OK] UDP connect test: OK");
+        }
+    }
+
+    println!("[INFO] UDP test target: {}", UDP_TEST_TARGET);
+    println!("[INFO] Note: {}", UDP_NOTE);
 }
 
 fn write_udp_diagnostics(output: &mut String, diagnostics: &UdpDiagnosticResult) {
@@ -305,8 +338,11 @@ fn doctor_profile(profile_name: &str) {
     let profile = match load_profile(profile_name) {
         Ok(profile) => profile,
         Err(err) => {
-            println!("Failed to load profile '{}': {}", profile_name, err);
-            println!("Expected file: profiles\\{}.json", profile_name);
+            println!(
+                "[FAILED] Failed to load profile '{}': {}",
+                profile_name, err
+            );
+            println!("[INFO] Expected file: profiles\\{}.json", profile_name);
             return;
         }
     };
@@ -326,8 +362,8 @@ fn restore() {
     println!("=== LocalAccessGuard Restore ===");
     println!();
 
-    println!("This will disable Windows user proxy and clear stale proxy entries.");
-    println!("It will also reset WinHTTP proxy.");
+    println!("[INFO] This will disable Windows user proxy and clear stale proxy entries.");
+    println!("[INFO] It will also reset WinHTTP proxy.");
     println!();
 
     run_command(
@@ -361,8 +397,8 @@ fn restore() {
     reset_winhttp_proxy();
 
     println!();
-    println!("Restore completed.");
-    println!("Run `cargo run -- status` again to verify.");
+    println!("[OK] Restore completed.");
+    println!("[INFO] Run `cargo run -- status` again to verify.");
 }
 
 fn report() {
@@ -374,7 +410,7 @@ fn report() {
     match fs::create_dir_all("reports") {
         Ok(_) => {}
         Err(err) => {
-            println!("Failed to create reports directory: {}", err);
+            println!("[FAILED] Failed to create reports directory: {}", err);
             return;
         }
     }
@@ -387,18 +423,18 @@ fn report() {
     let mut file = match file_result {
         Ok(file) => file,
         Err(err) => {
-            println!("Failed to create report file: {}", err);
+            println!("[FAILED] Failed to create report file: {}", err);
             return;
         }
     };
 
     match file.write_all(report_text.as_bytes()) {
         Ok(_) => {
-            println!("Report saved:");
+            println!("[OK] Report saved:");
             println!("{}", file_path);
         }
         Err(err) => {
-            println!("Failed to write report file: {}", err);
+            println!("[FAILED] Failed to write report file: {}", err);
         }
     }
 }
@@ -407,7 +443,10 @@ fn compare_reports(old_report_path: &str, new_report_path: &str) {
     let old_text = match fs::read_to_string(old_report_path) {
         Ok(text) => text,
         Err(err) => {
-            println!("Failed to read old report '{}': {}", old_report_path, err);
+            println!(
+                "[FAILED] Failed to read old report '{}': {}",
+                old_report_path, err
+            );
             return;
         }
     };
@@ -415,7 +454,10 @@ fn compare_reports(old_report_path: &str, new_report_path: &str) {
     let new_text = match fs::read_to_string(new_report_path) {
         Ok(text) => text,
         Err(err) => {
-            println!("Failed to read new report '{}': {}", new_report_path, err);
+            println!(
+                "[FAILED] Failed to read new report '{}': {}",
+                new_report_path, err
+            );
             return;
         }
     };
@@ -423,7 +465,7 @@ fn compare_reports(old_report_path: &str, new_report_path: &str) {
     let old_summary = match parse_report_summary(&old_text) {
         Ok(summary) => summary,
         Err(err) => {
-            println!("Invalid old report '{}': {}", old_report_path, err);
+            println!("[FAILED] Invalid old report '{}': {}", old_report_path, err);
             return;
         }
     };
@@ -431,7 +473,7 @@ fn compare_reports(old_report_path: &str, new_report_path: &str) {
     let new_summary = match parse_report_summary(&new_text) {
         Ok(summary) => summary,
         Err(err) => {
-            println!("Invalid new report '{}': {}", new_report_path, err);
+            println!("[FAILED] Invalid new report '{}': {}", new_report_path, err);
             return;
         }
     };
@@ -452,7 +494,7 @@ fn compare_reports(old_report_path: &str, new_report_path: &str) {
     println!();
 
     if !summary_changed && !reasons_changed {
-        println!("No summary changes detected.");
+        println!("[OK] No summary changes detected.");
         return;
     }
 
@@ -615,17 +657,17 @@ fn check_windows_proxy() {
     match proxy_enable {
         Some(text) => {
             if text.contains("0x1") {
-                println!("  ProxyEnable: Enabled");
-                println!("  Warning: Windows proxy is currently active.");
+                println!("  [WARNING] ProxyEnable: Enabled");
+                println!("  [WARNING] Windows proxy is currently active.");
             } else if text.contains("0x0") {
-                println!("  ProxyEnable: Disabled");
+                println!("  [OK] ProxyEnable: Disabled");
             } else {
-                println!("  ProxyEnable: Unknown");
+                println!("  [INFO] ProxyEnable: Unknown");
                 println!("{}", text.trim());
             }
         }
         None => {
-            println!("  ProxyEnable: Not found");
+            println!("  [WARNING] ProxyEnable: Not found");
         }
     }
 
@@ -640,11 +682,11 @@ fn check_windows_proxy() {
             println!("{}", text.trim());
 
             if text.contains("127.0.0.1") || text.contains("localhost") {
-                println!("  Warning: Stale local proxy entry exists.");
+                println!("  [WARNING] Stale local proxy entry exists.");
             }
         }
         None => {
-            println!("  ProxyServer: Not set");
+            println!("  [OK] ProxyServer: Not set");
         }
     }
 
@@ -663,10 +705,10 @@ fn check_autoconfig_url() {
         Some(text) => {
             println!("  AutoConfigURL:");
             println!("{}", text.trim());
-            println!("  Warning: PAC proxy config exists.");
+            println!("  [WARNING] PAC proxy config exists.");
         }
         None => {
-            println!("  AutoConfigURL: Not set");
+            println!("  [OK] AutoConfigURL: Not set");
         }
     }
 
@@ -683,10 +725,16 @@ fn check_winhttp_proxy() {
     match output {
         Ok(result) => {
             let text = String::from_utf8_lossy(&result.stdout);
-            println!("{}", text.trim());
+            let trimmed = text.trim();
+
+            if is_winhttp_direct_access(trimmed) {
+                println!("[OK] {}", trimmed);
+            } else {
+                println!("[INFO] {}", trimmed);
+            }
         }
         Err(err) => {
-            println!("  Error reading WinHTTP proxy: {}", err);
+            println!("  [FAILED] Error reading WinHTTP proxy: {}", err);
         }
     }
 
@@ -716,11 +764,11 @@ fn check_processes() {
                 let process_lower = process.to_lowercase();
 
                 if text.contains(&process_lower) {
-                    println!("  {}: Running", process);
+                    println!("  [INFO] {}: Running", process);
 
                     if process == "warp-svc.exe" {
                         println!(
-                            "    Warning: Cloudflare WARP service is running in the background."
+                            "    [WARNING] Cloudflare WARP service is running in the background."
                         );
                     }
 
@@ -728,15 +776,15 @@ fn check_processes() {
                         || process == "bypax-proxy.exe"
                         || process == "BypaxDPI.exe"
                     {
-                        println!("    Warning: DPI/proxy tool process is active.");
+                        println!("    [WARNING] DPI/proxy tool process is active.");
                     }
                 } else {
-                    println!("  {}: Not running", process);
+                    println!("  [OK] {}: Not running", process);
                 }
             }
         }
         Err(err) => {
-            println!("  Error reading process list: {}", err);
+            println!("  [FAILED] Error reading process list: {}", err);
         }
     }
 
@@ -751,13 +799,13 @@ fn check_domain(domain: &str) {
     match address.to_socket_addrs() {
         Ok(mut addrs) => {
             if let Some(addr) = addrs.next() {
-                println!("  Resolved: {}", addr.ip());
+                println!("  [OK] Resolved: {}", addr.ip());
             } else {
-                println!("  Failed: no address returned");
+                println!("  [FAILED] Failed: no address returned");
             }
         }
         Err(err) => {
-            println!("  Failed: {}", err);
+            println!("  [FAILED] Failed: {}", err);
         }
     }
 
@@ -777,18 +825,18 @@ fn check_tcp_443(domain: &str) {
                 let result = TcpStream::connect_timeout(&addr, Duration::from_secs(3));
 
                 if result.is_ok() {
-                    println!("  TCP 443: OK ({})", addr);
+                    println!("  [OK] TCP 443: OK ({})", addr);
                     success = true;
                     break;
                 }
             }
 
             if !success {
-                println!("  TCP 443: Failed");
+                println!("  [FAILED] TCP 443: Failed");
             }
         }
         Err(err) => {
-            println!("  Could not resolve address: {}", err);
+            println!("  [FAILED] Could not resolve address: {}", err);
         }
     }
 
@@ -824,7 +872,7 @@ fn delete_registry_value(path: &str, value_name: &str, label: &str) {
     let existing = read_reg_value(path, value_name);
 
     if existing.is_none() {
-        println!("SKIP - already clean");
+        println!("[OK] SKIP - already clean");
         return;
     }
 
@@ -835,9 +883,9 @@ fn delete_registry_value(path: &str, value_name: &str, label: &str) {
     match output {
         Ok(result) => {
             if result.status.success() {
-                println!("OK");
+                println!("[OK] OK");
             } else {
-                println!("FAILED");
+                println!("[FAILED] FAILED");
 
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -852,7 +900,7 @@ fn delete_registry_value(path: &str, value_name: &str, label: &str) {
             }
         }
         Err(err) => {
-            println!("ERROR: {}", err);
+            println!("[FAILED] ERROR: {}", err);
         }
     }
 }
@@ -865,9 +913,9 @@ fn run_command(program: &str, args: &[&str], label: &str) {
     match output {
         Ok(result) => {
             if result.status.success() {
-                println!("OK");
+                println!("[OK] OK");
             } else {
-                println!("FAILED");
+                println!("[FAILED] FAILED");
 
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -882,7 +930,7 @@ fn run_command(program: &str, args: &[&str], label: &str) {
             }
         }
         Err(err) => {
-            println!("ERROR: {}", err);
+            println!("[FAILED] ERROR: {}", err);
         }
     }
 }
@@ -898,13 +946,16 @@ fn reset_winhttp_proxy() {
         Ok(result) => {
             let text = String::from_utf8_lossy(&result.stdout);
 
-            if text.contains("Direct access") || text.contains("Doğrudan erişim") {
-                println!("SKIP - already clean");
+            if is_winhttp_direct_access(&text) {
+                println!("[OK] SKIP - already clean");
                 return;
             }
         }
         Err(err) => {
-            println!("ERROR while checking current WinHTTP proxy: {}", err);
+            println!(
+                "[FAILED] ERROR while checking current WinHTTP proxy: {}",
+                err
+            );
             return;
         }
     }
@@ -916,9 +967,9 @@ fn reset_winhttp_proxy() {
     match reset_output {
         Ok(result) => {
             if result.status.success() {
-                println!("OK");
+                println!("[OK] OK");
             } else {
-                println!("FAILED - admin permission may be required");
+                println!("[FAILED] FAILED - admin permission may be required");
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let stderr = String::from_utf8_lossy(&result.stderr);
@@ -933,7 +984,7 @@ fn reset_winhttp_proxy() {
             }
         }
         Err(err) => {
-            println!("ERROR: {}", err);
+            println!("[FAILED] ERROR: {}", err);
         }
     }
 }
@@ -945,6 +996,10 @@ fn load_profile(profile_name: &str) -> Result<Profile, String> {
         .map_err(|err| format!("could not read {}: {}", file_path, err))?;
 
     parse_and_validate_profile(&text)
+}
+
+fn is_winhttp_direct_access(text: &str) -> bool {
+    text.contains("Direct access") || text.contains("Doğrudan erişim")
 }
 
 fn load_all_profiles() -> Vec<Profile> {
