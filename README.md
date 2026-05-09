@@ -6,7 +6,25 @@ It checks Windows proxy-related settings, detects known network tools, runs prof
 
 ## Current Version
 
-v1.2.0
+v1.3.0
+
+## Stable v1.x Scope
+
+LocalAccessGuard v1.x is a stable Windows network diagnostic CLI focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, and report comparison.
+
+It is:
+
+- a Windows network diagnostic CLI
+- a cleanup utility for proxy/PAC/WinHTTP settings
+- a profile-based DNS/TCP diagnostic tool
+- a report generator and comparison utility
+
+It is not:
+
+- a VPN
+- a proxy engine
+- a DPI bypass tool
+- a packet manipulation tool
 
 ## Features
 
@@ -25,19 +43,18 @@ v1.2.0
 
 ## Commands
 
-```bash
+```text
 cargo run -- status
-cargo run -- help
 cargo run -- restore
-cargo run -- report
-cargo run -- doctor discord
-cargo run -- doctor roblox
 cargo run -- profiles
 cargo run -- validate
-cargo run -- compare reports\old.txt reports\new.txt
+cargo run -- doctor <profile>
+cargo run -- report
+cargo run -- compare <old_report> <new_report>
 cargo run -- netinfo
 cargo run -- udpcheck
 cargo run -- config
+cargo run -- help
 ```
 
 Profiles and reports use the effective configuration. By default, profiles are loaded from `profiles/*.json` and reports are saved under `reports/`.
@@ -77,6 +94,7 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 ## Version History
 
+- v1.3.0: Final v1 polish before v2.0 modular refactor.
 - v1.2.0: Added config.json support.
 - v1.1.0: Improved CLI help and terminal output readability.
 - v0.1.0: Initial diagnostic prototype.

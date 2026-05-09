@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.0
+
+### Added
+- Final v1.x polish before v2.0.0
+- Clearer v1.x project scope documentation
+- Updated stable command list documentation
+
+### Changed
+- Updated project version to v1.3.0
+- Updated README for v1.x completion
+- Prepared the project for future v2.0.0 modular refactor
+
+### Verified
+- `status`
+- `restore`
+- `profiles`
+- `validate`
+- `doctor <profile>`
+- `report`
+- `compare <old_report> <new_report>`
+- `netinfo`
+- `udpcheck`
+- `config`
+- `help`
+
 ## v1.2.0
 
 ### Added
