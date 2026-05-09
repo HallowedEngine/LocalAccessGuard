@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.0.0
+
+### Added
+- First desktop dashboard GUI
+- `gui` command
+- Dark card-based network health dashboard
+- Overall status panel
+- Status cards for proxy, PAC, WinHTTP, network, UDP, WARP, firewall, services, and reports
+- GUI buttons for safe diagnostic commands
+- GUI report generation buttons for TXT, JSON, and Markdown reports
+- Scrollable details output area
+
+### Changed
+- Updated project version to v3.0.0
+- Kept existing CLI behavior stable
+
+### Notes
+- Restore remains CLI-only for safety
+- GUI does not add VPN, proxy engine, DPI bypass, packet manipulation, or engine wrapper functionality
+
 ## v2.2.0
 
 ### Added

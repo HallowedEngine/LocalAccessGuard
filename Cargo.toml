@@ -1,9 +1,10 @@
 [package]
 name = "LocalAccessGuard"
-version = "2.2.0"
+version = "3.0.0"
 edition = "2024"
 
 [dependencies]
 chrono = "0.4"
+eframe = "0.34.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

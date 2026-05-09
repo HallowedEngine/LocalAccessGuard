@@ -1,16 +1,16 @@
 # LocalAccessGuard
 
-LocalAccessGuard is a Rust-based Windows network diagnostic, cleanup, profile-checking, and reporting CLI utility.
+LocalAccessGuard is a Rust-based Windows network diagnostic, cleanup, profile-checking, reporting, and desktop dashboard utility.
 
 It checks Windows proxy-related settings, detects known network tools, runs profile-based DNS/TCP diagnostics, inspects network adapter and DNS configuration, runs basic UDP diagnostics, exports timestamped reports, inspects firewall rules and services read-only, and can safely clean stale proxy configuration.
 
 ## Current Version
 
-v2.2.0
+v3.0.0
 
 ## Stable Scope
 
-LocalAccessGuard is a stable Windows network diagnostic CLI focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, report comparison, and read-only Windows inspection.
+LocalAccessGuard is a stable Windows network diagnostic utility focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, report comparison, read-only Windows inspection, and a safe desktop dashboard.
 
 It is:
 
@@ -48,6 +48,7 @@ It is not:
 - Read-only Windows service inspection
 - Safe system-level diagnosis and suggestions
 - Clear CLI help aliases and readable terminal status prefixes
+- Desktop GUI dashboard with safe read-only diagnostic actions
 
 ## Commands
 
@@ -69,9 +70,20 @@ cargo run -- services
 cargo run -- doctor-system
 cargo run -- config
 cargo run -- help
+cargo run -- gui
 ```
 
 Profiles, groups, reports, and logs use the effective configuration. By default, profiles are loaded from `profiles/*.json`, groups from `groups/*.json`, reports are saved under `reports/`, and logs are appended under `logs/`.
+
+## Desktop GUI
+
+Open the desktop dashboard with:
+
+```bash
+cargo run -- gui
+```
+
+The GUI opens a desktop dashboard window with network health cards, safe read-only diagnostic buttons, and TXT/JSON/Markdown report generation. Restore remains CLI-only for safety.
 
 ## Config
 
@@ -123,7 +135,7 @@ Run a system-level diagnosis with safe, non-destructive suggestions:
 cargo run -- doctor-system
 ```
 
-These commands are inspection-only. Normal reports do not automatically include firewall or service sections in v2.2.0.
+These commands are inspection-only. Normal reports do not automatically include firewall or service sections in v3.0.0.
 
 ## Logs
 
@@ -176,6 +188,7 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 ## Version History
 
+- v3.0.0: Added first desktop dashboard GUI.
 - v2.2.0: Added read-only firewall inspection, service inspection, and system doctor suggestions.
 - v2.1.0: Added unique report filenames, local logging, report formats, and profile groups.
 - v2.0.0: Split code into smaller source modules for easier maintenance.
@@ -197,4 +210,4 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 LocalAccessGuard is not a VPN, bypass tool, proxy engine, packet manipulation engine, or engine wrapper.
 
-It is a Windows network diagnostic, cleanup, profile-checking, and reporting CLI utility.
+It is a Windows network diagnostic, cleanup, profile-checking, reporting, and desktop dashboard utility.

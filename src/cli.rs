@@ -4,6 +4,7 @@ use crate::config::{Config, EffectiveConfig};
 use crate::doctor_system::doctor_system;
 use crate::firewall::firewall_check;
 use crate::groups::{doctor_group, groups};
+use crate::gui;
 use crate::logger;
 use crate::network::{doctor_profile, netinfo, udpcheck};
 use crate::profiles::{profiles, validate_profiles};
@@ -22,6 +23,11 @@ pub fn handle_args(args: &[String], effective_config: EffectiveConfig) {
             let config = config_with_warning(effective_config);
             logger::info(&config, "command=help");
             print_help();
+        }
+        "gui" => {
+            let config = config_with_warning(effective_config);
+            logger::info(&config, "command=gui");
+            gui::launch();
         }
         "status" => {
             let config = config_with_warning(effective_config);
@@ -151,6 +157,7 @@ fn print_help() {
     println!("  LocalAccessGuard <command>");
     println!();
     println!("Commands:");
+    println!("  gui                             Open desktop dashboard");
     println!("  status                          Show system proxy and process status");
     println!("  restore                         Restore proxy/PAC/WinHTTP settings");
     println!("  profiles                        List available JSON profiles");
@@ -171,6 +178,7 @@ fn print_help() {
     println!();
     println!("Examples:");
     println!("  LocalAccessGuard status");
+    println!("  LocalAccessGuard gui");
     println!("  LocalAccessGuard doctor discord");
     println!("  LocalAccessGuard doctor-group gaming");
     println!("  LocalAccessGuard report");

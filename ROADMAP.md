@@ -10,14 +10,15 @@ Versions v1.4.0 through v1.9.0 are intentionally skipped so the project can move
 
 ## Current Milestone
 
-v2.2.0 is the current milestone and is the Windows inspection pack: read-only firewall inspection, read-only service inspection, and safe system doctor suggestions.
+v3.0.0 is the current milestone and adds the first desktop dashboard GUI for safe network health diagnostics.
 
-## Planned v2.x Ideas
+## Planned Ideas
 
 - Cleaner error handling
 - Easier testing
 - More structured inspection summaries
+- Future GUI versions may add report browsing, a log viewer, and safer restore confirmation
 
-## Future v3.0.0 Milestone
+## Completed v2.2.0 Milestone
 
-v3.0.0 remains a future GUI milestone.
+v2.2.0 delivered the Windows inspection pack: read-only firewall inspection, read-only service inspection, and safe system doctor suggestions.
