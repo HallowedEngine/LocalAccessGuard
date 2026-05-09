@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.0
+
+### Added
+- `udpcheck` command for basic UDP diagnostics
+- UDP socket bind test
+- UDP connect test
+- UDP diagnostics section in generated reports
+- UDP capability notes for Discord voice and Roblox gameplay troubleshooting
+
+### Changed
+- Report output now includes basic UDP diagnostic information
+
 ## v0.8.0
 
 ### Added

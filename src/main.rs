@@ -4,12 +4,14 @@ use std::env;
 use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::Write as _;
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{TcpStream, ToSocketAddrs, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const VERSION: &str = "v0.8.0";
+const VERSION: &str = "v0.9.0";
+const UDP_TEST_TARGET: &str = "1.1.1.1:53";
+const UDP_NOTE: &str = "This is a basic local UDP capability check. It does not guarantee that every game or voice service UDP path is reachable.";
 
 #[derive(Debug, Deserialize)]
 struct Profile {
@@ -75,6 +77,13 @@ struct ParsedReportSummary {
     reasons: Vec<String>,
 }
 
+#[derive(Debug)]
+struct UdpDiagnosticResult {
+    bind_error: Option<String>,
+    local_socket: Option<String>,
+    connect_error: Option<String>,
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -100,6 +109,7 @@ fn main() {
         "restore" => restore(),
         "report" => report(),
         "netinfo" => netinfo(),
+        "udpcheck" => udpcheck(),
         "compare" => {
             if args.len() < 4 {
                 println!("Usage: lag compare <old_report> <new_report>");
@@ -124,6 +134,7 @@ fn print_help() {
     println!("  restore");
     println!("  report");
     println!("  netinfo");
+    println!("  udpcheck");
     println!("  compare <old_report> <new_report>");
     println!();
     println!("Examples:");
@@ -220,6 +231,74 @@ fn netinfo() {
 
     let adapters = get_network_adapters();
     print_network_adapters(&adapters);
+}
+
+fn udpcheck() {
+    println!("=== UDP Diagnostics ===");
+    println!();
+
+    let diagnostics = run_udp_diagnostics();
+    print_udp_diagnostics(&diagnostics);
+}
+
+fn run_udp_diagnostics() -> UdpDiagnosticResult {
+    let socket = match UdpSocket::bind("0.0.0.0:0") {
+        Ok(socket) => socket,
+        Err(err) => {
+            return UdpDiagnosticResult {
+                bind_error: Some(err.to_string()),
+                local_socket: None,
+                connect_error: Some(format!("bind failed before connect: {}", err)),
+            };
+        }
+    };
+
+    let local_socket = socket.local_addr().ok().map(|addr| addr.to_string());
+    let connect_error = socket
+        .connect(UDP_TEST_TARGET)
+        .err()
+        .map(|err| err.to_string());
+
+    UdpDiagnosticResult {
+        bind_error: None,
+        local_socket,
+        connect_error,
+    }
+}
+
+fn print_udp_diagnostics(diagnostics: &UdpDiagnosticResult) {
+    let mut text = String::new();
+    write_udp_diagnostics(&mut text, diagnostics);
+    print!("{}", text);
+}
+
+fn write_udp_diagnostics(output: &mut String, diagnostics: &UdpDiagnosticResult) {
+    match &diagnostics.bind_error {
+        Some(err) => {
+            let _ = writeln!(output, "UDP socket bind: FAILED ({})", err);
+        }
+        None => {
+            let _ = writeln!(output, "UDP socket bind: OK");
+        }
+    }
+
+    let _ = writeln!(
+        output,
+        "Local UDP socket: {}",
+        diagnostics.local_socket.as_deref().unwrap_or("Unavailable")
+    );
+
+    match &diagnostics.connect_error {
+        Some(err) => {
+            let _ = writeln!(output, "UDP connect test: FAILED ({})", err);
+        }
+        None => {
+            let _ = writeln!(output, "UDP connect test: OK");
+        }
+    }
+
+    let _ = writeln!(output, "UDP test target: {}", UDP_TEST_TARGET);
+    let _ = writeln!(output, "Note: {}", UDP_NOTE);
 }
 
 fn doctor_profile(profile_name: &str) {
@@ -979,6 +1058,7 @@ fn build_report_text() -> String {
     append_autoconfig_report(&mut report);
     append_winhttp_report(&mut report);
     append_network_info_report(&mut report);
+    append_udp_diagnostics_report(&mut report);
     append_process_report(&mut report);
     append_profiles_report(&mut report);
 
@@ -1253,6 +1333,14 @@ fn append_network_info_report(report: &mut String) {
         }
     }
 
+    let _ = writeln!(report);
+}
+
+fn append_udp_diagnostics_report(report: &mut String) {
+    let diagnostics = run_udp_diagnostics();
+
+    let _ = writeln!(report, "[UDP Diagnostics]");
+    write_udp_diagnostics(report, &diagnostics);
     let _ = writeln!(report);
 }
 
