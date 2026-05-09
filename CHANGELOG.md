@@ -1,4 +1,21 @@
 # Changelog
+
+## v0.3.0
+
+### Added
+- Working `report` command
+- Automatic `reports/` directory creation
+- Timestamped diagnostic report files
+- Windows proxy status in report output
+- AutoConfigURL / PAC proxy status in report output
+- WinHTTP proxy status in report output
+- Known network tool process status in report output
+- Discord DNS and TCP 443 diagnostics in report output
+- Roblox DNS and TCP 443 diagnostics in report output
+
+### Changed
+- `report` is now prepared for before/after network comparison workflows
+
 ## v0.2.0
 
 ### Added

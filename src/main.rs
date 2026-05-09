@@ -1,4 +1,8 @@
+use chrono::Local;
 use std::env;
+use std::fmt::Write as _;
+use std::fs::{self, File};
+use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::process::Command;
 use std::time::Duration;
@@ -32,7 +36,7 @@ fn main() {
 }
 
 fn print_help() {
-    println!("LocalAccessGuard v0.2.0");
+    println!("LocalAccessGuard v0.3.0");
     println!();
     println!("Commands:");
     println!("  status");
@@ -109,15 +113,48 @@ fn restore() {
     );
 
     reset_winhttp_proxy();
-      
+
     println!();
     println!("Restore completed.");
     println!("Run `cargo run -- status` again to verify.");
 }
 
 fn report() {
-    println!("Report function is not implemented yet.");
-    println!("v0.3 goal: export diagnostic report to a text file.");
+    println!("=== LocalAccessGuard Report ===");
+    println!();
+
+    let report_text = build_report_text();
+
+    match fs::create_dir_all("reports") {
+        Ok(_) => {}
+        Err(err) => {
+            println!("Failed to create reports directory: {}", err);
+            return;
+        }
+    }
+
+    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let file_path = format!("reports\\local_access_report_{}.txt", timestamp);
+
+    let file_result = File::create(&file_path);
+
+    let mut file = match file_result {
+        Ok(file) => file,
+        Err(err) => {
+            println!("Failed to create report file: {}", err);
+            return;
+        }
+    };
+
+    match file.write_all(report_text.as_bytes()) {
+        Ok(_) => {
+            println!("Report saved:");
+            println!("{}", file_path);
+        }
+        Err(err) => {
+            println!("Failed to write report file: {}", err);
+        }
+    }
 }
 
 fn check_windows_proxy() {
@@ -235,7 +272,9 @@ fn check_processes() {
                     println!("  {}: Running", process);
 
                     if process == "warp-svc.exe" {
-                        println!("    Warning: Cloudflare WARP service is running in the background.");
+                        println!(
+                            "    Warning: Cloudflare WARP service is running in the background."
+                        );
                     }
 
                     if process == "goodbyedpi.exe"
@@ -449,5 +488,227 @@ fn reset_winhttp_proxy() {
         Err(err) => {
             println!("ERROR: {}", err);
         }
+    }
+}
+
+fn build_report_text() -> String {
+    let mut report = String::new();
+
+    let _ = writeln!(report, "LocalAccessGuard Report");
+    let _ = writeln!(report, "Version: v0.3.0");
+    let _ = writeln!(
+        report,
+        "Generated: {}",
+        Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
+    let _ = writeln!(report);
+
+    append_windows_proxy_report(&mut report);
+    append_autoconfig_report(&mut report);
+    append_winhttp_report(&mut report);
+    append_process_report(&mut report);
+    append_service_report(
+        &mut report,
+        "Discord",
+        &["discord.com", "discord.gg"],
+        "discord.com",
+    );
+    append_service_report(
+        &mut report,
+        "Roblox",
+        &["roblox.com", "www.roblox.com"],
+        "roblox.com",
+    );
+
+    report
+}
+
+fn append_windows_proxy_report(report: &mut String) {
+    let _ = writeln!(report, "[Windows Proxy]");
+
+    let proxy_enable = read_reg_value(
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        "ProxyEnable",
+    );
+
+    match proxy_enable {
+        Some(text) => {
+            if text.contains("0x1") {
+                let _ = writeln!(report, "ProxyEnable: Enabled");
+                let _ = writeln!(report, "Warning: Windows proxy is currently active.");
+            } else if text.contains("0x0") {
+                let _ = writeln!(report, "ProxyEnable: Disabled");
+            } else {
+                let _ = writeln!(report, "ProxyEnable: Unknown");
+                let _ = writeln!(report, "{}", text.trim());
+            }
+        }
+        None => {
+            let _ = writeln!(report, "ProxyEnable: Not found");
+        }
+    }
+
+    let proxy_server = read_reg_value(
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        "ProxyServer",
+    );
+
+    match proxy_server {
+        Some(text) => {
+            let _ = writeln!(report, "ProxyServer:");
+            let _ = writeln!(report, "{}", text.trim());
+
+            if text.contains("127.0.0.1") || text.contains("localhost") {
+                let _ = writeln!(report, "Warning: Stale local proxy entry exists.");
+            }
+        }
+        None => {
+            let _ = writeln!(report, "ProxyServer: Not set");
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_autoconfig_report(report: &mut String) {
+    let _ = writeln!(report, "[Auto Proxy / PAC]");
+
+    let autoconfig = read_reg_value(
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        "AutoConfigURL",
+    );
+
+    match autoconfig {
+        Some(text) => {
+            let _ = writeln!(report, "AutoConfigURL:");
+            let _ = writeln!(report, "{}", text.trim());
+            let _ = writeln!(report, "Warning: PAC proxy config exists.");
+        }
+        None => {
+            let _ = writeln!(report, "AutoConfigURL: Not set");
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_winhttp_report(report: &mut String) {
+    let _ = writeln!(report, "[WinHTTP Proxy]");
+
+    let output = Command::new("netsh")
+        .args(["winhttp", "show", "proxy"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            let text = String::from_utf8_lossy(&result.stdout);
+            let _ = writeln!(report, "{}", text.trim());
+        }
+        Err(err) => {
+            let _ = writeln!(report, "Error reading WinHTTP proxy: {}", err);
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_process_report(report: &mut String) {
+    let _ = writeln!(report, "[Known Network Tools]");
+
+    let known_processes = [
+        "warp-svc.exe",
+        "Cloudflare WARP.exe",
+        "goodbyedpi.exe",
+        "bypax-proxy.exe",
+        "BypaxDPI.exe",
+        "Discord.exe",
+        "RobloxPlayerBeta.exe",
+    ];
+
+    let output = Command::new("tasklist").output();
+
+    match output {
+        Ok(result) => {
+            let text = String::from_utf8_lossy(&result.stdout).to_lowercase();
+
+            for process in known_processes {
+                let process_lower = process.to_lowercase();
+
+                if text.contains(&process_lower) {
+                    let _ = writeln!(report, "{}: Running", process);
+
+                    if process == "warp-svc.exe" {
+                        let _ = writeln!(
+                            report,
+                            "Warning: Cloudflare WARP service is running in the background."
+                        );
+                    }
+
+                    if process == "goodbyedpi.exe"
+                        || process == "bypax-proxy.exe"
+                        || process == "BypaxDPI.exe"
+                    {
+                        let _ = writeln!(report, "Warning: DPI/proxy tool process is active.");
+                    }
+                } else {
+                    let _ = writeln!(report, "{}: Not running", process);
+                }
+            }
+        }
+        Err(err) => {
+            let _ = writeln!(report, "Error reading process list: {}", err);
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_service_report(
+    report: &mut String,
+    service_name: &str,
+    domains: &[&str],
+    tcp_test_domain: &str,
+) {
+    let _ = writeln!(report, "[{}]", service_name);
+
+    for domain in domains {
+        let dns_result = get_dns_result(domain);
+        let _ = writeln!(report, "DNS {}: {}", domain, dns_result);
+    }
+
+    let tcp_result = get_tcp_443_result(tcp_test_domain);
+    let _ = writeln!(report, "TCP 443 {}: {}", tcp_test_domain, tcp_result);
+
+    let _ = writeln!(report);
+}
+
+fn get_dns_result(domain: &str) -> String {
+    let address = format!("{}:443", domain);
+
+    match address.to_socket_addrs() {
+        Ok(mut addrs) => match addrs.next() {
+            Some(addr) => format!("OK ({})", addr.ip()),
+            None => "FAILED - no address returned".to_string(),
+        },
+        Err(err) => format!("FAILED - {}", err),
+    }
+}
+
+fn get_tcp_443_result(domain: &str) -> String {
+    let address = format!("{}:443", domain);
+
+    match address.to_socket_addrs() {
+        Ok(addrs) => {
+            for addr in addrs {
+                let result = TcpStream::connect_timeout(&addr, Duration::from_secs(3));
+
+                if result.is_ok() {
+                    return format!("OK ({})", addr);
+                }
+            }
+
+            "FAILED".to_string()
+        }
+        Err(err) => format!("FAILED - could not resolve address: {}", err),
     }
 }
