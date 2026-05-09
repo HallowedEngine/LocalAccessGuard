@@ -1,5 +1,5 @@
 use chrono::Local;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fmt::Write as _;
 use std::fs::{self, File};
@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const VERSION: &str = "v1.1.0";
-const UDP_TEST_TARGET: &str = "1.1.1.1:53";
+const VERSION: &str = "v1.2.0";
+const CONFIG_PATH: &str = "config.json";
 const UDP_NOTE: &str = "This is a basic local UDP capability check. It does not guarantee that every game or voice service UDP path is reachable.";
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +18,40 @@ struct Profile {
     name: String,
     domains: Vec<String>,
     tcp_test_domain: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct Config {
+    profile_directory: String,
+    report_directory: String,
+    default_profiles: Vec<String>,
+    udp_test_target: String,
+    show_warp_warning: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            profile_directory: "profiles".to_string(),
+            report_directory: "reports".to_string(),
+            default_profiles: vec!["discord".to_string(), "roblox".to_string()],
+            udp_test_target: "1.1.1.1:53".to_string(),
+            show_warp_warning: true,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ConfigSource {
+    File,
+    Missing,
+    Invalid(String),
+}
+
+#[derive(Debug)]
+struct EffectiveConfig {
+    config: Config,
+    source: ConfigSource,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -94,7 +128,10 @@ fn main() {
 
     match args[1].as_str() {
         "help" | "--help" | "-h" => print_help(),
-        "status" => status(),
+        "status" => {
+            let config = load_config_with_warning();
+            status(&config);
+        }
         "doctor" => {
             if args.len() < 3 {
                 println!("[FAILED] Missing profile name.");
@@ -104,14 +141,28 @@ fn main() {
                 return;
             }
 
-            doctor_profile(&args[2]);
+            let config = load_config_with_warning();
+            doctor_profile(&args[2], &config);
         }
-        "profiles" => profiles(),
-        "validate" => validate_profiles(),
+        "profiles" => {
+            let config = load_config_with_warning();
+            profiles(&config);
+        }
+        "validate" => {
+            let config = load_config_with_warning();
+            validate_profiles(&config);
+        }
         "restore" => restore(),
-        "report" => report(),
+        "report" => {
+            let config = load_config_with_warning();
+            report(&config);
+        }
         "netinfo" => netinfo(),
-        "udpcheck" => udpcheck(),
+        "udpcheck" => {
+            let config = load_config_with_warning();
+            udpcheck(&config);
+        }
+        "config" => print_config(),
         "compare" => {
             if args.len() < 4 {
                 println!("[FAILED] Missing report path.");
@@ -142,6 +193,7 @@ fn print_help() {
     println!("  compare <old_report> <new_report> Compare two diagnostic reports");
     println!("  netinfo                         Show active adapter and DNS information");
     println!("  udpcheck                        Run basic UDP diagnostics");
+    println!("  config                          Show effective configuration");
     println!("  help                            Show this help screen");
     println!();
     println!("Examples:");
@@ -151,8 +203,8 @@ fn print_help() {
     println!("  LocalAccessGuard compare reports\\old.txt reports\\new.txt");
 }
 
-fn profiles() {
-    let entries = match profile_files() {
+fn profiles(config: &Config) {
+    let entries = match profile_files(&config.profile_directory) {
         Ok(entries) => entries,
         Err(_) => {
             println!("[WARNING] No valid profiles found.");
@@ -194,8 +246,8 @@ fn profiles() {
     }
 }
 
-fn validate_profiles() {
-    let entries = match profile_files() {
+fn validate_profiles(config: &Config) {
+    let entries = match profile_files(&config.profile_directory) {
         Ok(entries) => entries,
         Err(err) => {
             println!("[FAILED] Could not read profiles directory: {}", err);
@@ -226,14 +278,14 @@ fn validate_profiles() {
     }
 }
 
-fn status() {
+fn status(config: &Config) {
     println!("=== LocalAccessGuard Status ===");
     println!();
 
     check_windows_proxy();
     check_autoconfig_url();
     check_winhttp_proxy();
-    check_processes();
+    check_processes(config);
 }
 
 fn netinfo() {
@@ -244,15 +296,15 @@ fn netinfo() {
     print_network_adapters(&adapters);
 }
 
-fn udpcheck() {
+fn udpcheck(config: &Config) {
     println!("=== UDP Diagnostics ===");
     println!();
 
-    let diagnostics = run_udp_diagnostics();
-    print_udp_diagnostics(&diagnostics);
+    let diagnostics = run_udp_diagnostics(&config.udp_test_target);
+    print_udp_diagnostics(&diagnostics, &config.udp_test_target);
 }
 
-fn run_udp_diagnostics() -> UdpDiagnosticResult {
+fn run_udp_diagnostics(udp_test_target: &str) -> UdpDiagnosticResult {
     let socket = match UdpSocket::bind("0.0.0.0:0") {
         Ok(socket) => socket,
         Err(err) => {
@@ -266,7 +318,7 @@ fn run_udp_diagnostics() -> UdpDiagnosticResult {
 
     let local_socket = socket.local_addr().ok().map(|addr| addr.to_string());
     let connect_error = socket
-        .connect(UDP_TEST_TARGET)
+        .connect(udp_test_target)
         .err()
         .map(|err| err.to_string());
 
@@ -277,7 +329,7 @@ fn run_udp_diagnostics() -> UdpDiagnosticResult {
     }
 }
 
-fn print_udp_diagnostics(diagnostics: &UdpDiagnosticResult) {
+fn print_udp_diagnostics(diagnostics: &UdpDiagnosticResult, udp_test_target: &str) {
     match &diagnostics.bind_error {
         Some(err) => {
             println!("[FAILED] UDP socket bind: FAILED ({})", err);
@@ -301,11 +353,15 @@ fn print_udp_diagnostics(diagnostics: &UdpDiagnosticResult) {
         }
     }
 
-    println!("[INFO] UDP test target: {}", UDP_TEST_TARGET);
+    println!("[INFO] UDP test target: {}", udp_test_target);
     println!("[INFO] Note: {}", UDP_NOTE);
 }
 
-fn write_udp_diagnostics(output: &mut String, diagnostics: &UdpDiagnosticResult) {
+fn write_udp_diagnostics(
+    output: &mut String,
+    diagnostics: &UdpDiagnosticResult,
+    udp_test_target: &str,
+) {
     match &diagnostics.bind_error {
         Some(err) => {
             let _ = writeln!(output, "UDP socket bind: FAILED ({})", err);
@@ -330,19 +386,21 @@ fn write_udp_diagnostics(output: &mut String, diagnostics: &UdpDiagnosticResult)
         }
     }
 
-    let _ = writeln!(output, "UDP test target: {}", UDP_TEST_TARGET);
+    let _ = writeln!(output, "UDP test target: {}", udp_test_target);
     let _ = writeln!(output, "Note: {}", UDP_NOTE);
 }
 
-fn doctor_profile(profile_name: &str) {
-    let profile = match load_profile(profile_name) {
+fn doctor_profile(profile_name: &str, config: &Config) {
+    let profile = match load_profile(profile_name, &config.profile_directory) {
         Ok(profile) => profile,
         Err(err) => {
             println!(
                 "[FAILED] Failed to load profile '{}': {}",
                 profile_name, err
             );
-            println!("[INFO] Expected file: profiles\\{}.json", profile_name);
+            let expected_path =
+                Path::new(&config.profile_directory).join(format!("{}.json", profile_name));
+            println!("[INFO] Expected file: {}", expected_path.to_string_lossy());
             return;
         }
     };
@@ -355,7 +413,7 @@ fn doctor_profile(profile_name: &str) {
     }
 
     check_tcp_443(&profile.tcp_test_domain);
-    check_processes();
+    check_processes(config);
 }
 
 fn restore() {
@@ -401,13 +459,13 @@ fn restore() {
     println!("[INFO] Run `cargo run -- status` again to verify.");
 }
 
-fn report() {
+fn report(config: &Config) {
     println!("=== LocalAccessGuard Report ===");
     println!();
 
-    let report_text = build_report_text();
+    let report_text = build_report_text(config);
 
-    match fs::create_dir_all("reports") {
+    match fs::create_dir_all(&config.report_directory) {
         Ok(_) => {}
         Err(err) => {
             println!("[FAILED] Failed to create reports directory: {}", err);
@@ -416,7 +474,8 @@ fn report() {
     }
 
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let file_path = format!("reports\\local_access_report_{}.txt", timestamp);
+    let file_path =
+        Path::new(&config.report_directory).join(format!("local_access_report_{}.txt", timestamp));
 
     let file_result = File::create(&file_path);
 
@@ -431,7 +490,7 @@ fn report() {
     match file.write_all(report_text.as_bytes()) {
         Ok(_) => {
             println!("[OK] Report saved:");
-            println!("{}", file_path);
+            println!("{}", file_path.to_string_lossy());
         }
         Err(err) => {
             println!("[FAILED] Failed to write report file: {}", err);
@@ -741,7 +800,79 @@ fn check_winhttp_proxy() {
     println!();
 }
 
-fn check_processes() {
+fn load_config() -> EffectiveConfig {
+    let config_path = Path::new(CONFIG_PATH);
+
+    if !config_path.exists() {
+        return EffectiveConfig {
+            config: Config::default(),
+            source: ConfigSource::Missing,
+        };
+    }
+
+    let text = match fs::read_to_string(config_path) {
+        Ok(text) => text,
+        Err(err) => {
+            return EffectiveConfig {
+                config: Config::default(),
+                source: ConfigSource::Invalid(format!("could not read {}: {}", CONFIG_PATH, err)),
+            };
+        }
+    };
+
+    match serde_json::from_str::<Config>(&text) {
+        Ok(config) => EffectiveConfig {
+            config,
+            source: ConfigSource::File,
+        },
+        Err(err) => EffectiveConfig {
+            config: Config::default(),
+            source: ConfigSource::Invalid(format!("invalid {}: {}", CONFIG_PATH, err)),
+        },
+    }
+}
+
+fn load_config_with_warning() -> Config {
+    let effective = load_config();
+
+    if let ConfigSource::Invalid(err) = &effective.source {
+        println!("[WARNING] Config source: built-in defaults; {}.", err);
+    }
+
+    effective.config
+}
+
+fn print_config() {
+    let effective = load_config();
+
+    println!("=== LocalAccessGuard Config ===");
+    println!();
+
+    match &effective.source {
+        ConfigSource::File => println!("[INFO] Config source: {}", CONFIG_PATH),
+        ConfigSource::Missing => println!(
+            "[WARNING] Config source: built-in defaults; {} not found.",
+            CONFIG_PATH
+        ),
+        ConfigSource::Invalid(err) => {
+            println!("[WARNING] Config source: built-in defaults; {}.", err)
+        }
+    }
+
+    println!();
+    println!("profile_directory: {}", effective.config.profile_directory);
+    println!("report_directory: {}", effective.config.report_directory);
+    println!("default_profiles:");
+
+    for profile in &effective.config.default_profiles {
+        println!("- {}", profile);
+    }
+
+    println!("udp_test_target: {}", effective.config.udp_test_target);
+    println!("show_warp_warning: {}", effective.config.show_warp_warning);
+}
+
+fn check_processes(config: &Config) {
     println!("[Known Network Tools]");
 
     let known_processes = [
@@ -766,7 +897,7 @@ fn check_processes() {
                 if text.contains(&process_lower) {
                     println!("  [INFO] {}: Running", process);
 
-                    if process == "warp-svc.exe" {
+                    if process == "warp-svc.exe" && config.show_warp_warning {
                         println!(
                             "    [WARNING] Cloudflare WARP service is running in the background."
                         );
@@ -989,11 +1120,11 @@ fn reset_winhttp_proxy() {
     }
 }
 
-fn load_profile(profile_name: &str) -> Result<Profile, String> {
-    let file_path = format!("profiles\\{}.json", profile_name);
+fn load_profile(profile_name: &str, profile_directory: &str) -> Result<Profile, String> {
+    let file_path = Path::new(profile_directory).join(format!("{}.json", profile_name));
 
     let text = fs::read_to_string(&file_path)
-        .map_err(|err| format!("could not read {}: {}", file_path, err))?;
+        .map_err(|err| format!("could not read {}: {}", file_path.to_string_lossy(), err))?;
 
     parse_and_validate_profile(&text)
 }
@@ -1002,10 +1133,10 @@ fn is_winhttp_direct_access(text: &str) -> bool {
     text.contains("Direct access") || text.contains("Doğrudan erişim")
 }
 
-fn load_all_profiles() -> Vec<Profile> {
+fn load_all_profiles(profile_directory: &str) -> Vec<Profile> {
     let mut profiles = Vec::new();
 
-    let entries = match profile_files() {
+    let entries = match profile_files(profile_directory) {
         Ok(entries) => entries,
         Err(_) => return profiles,
     };
@@ -1029,8 +1160,28 @@ fn load_all_profiles() -> Vec<Profile> {
     profiles
 }
 
-fn profile_files() -> Result<Vec<PathBuf>, String> {
-    let entries = fs::read_dir("profiles").map_err(|err| err.to_string())?;
+fn load_report_profiles(config: &Config) -> Vec<Profile> {
+    let profiles = if config.default_profiles.is_empty() {
+        load_all_profiles(&config.profile_directory)
+    } else {
+        let mut profiles = Vec::new();
+
+        for profile_name in &config.default_profiles {
+            if let Ok(profile) = load_profile(profile_name, &config.profile_directory) {
+                profiles.push(profile);
+            }
+        }
+
+        profiles
+    };
+
+    let mut profiles = profiles;
+    profiles.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    profiles
+}
+
+fn profile_files(profile_directory: &str) -> Result<Vec<PathBuf>, String> {
+    let entries = fs::read_dir(profile_directory).map_err(|err| err.to_string())?;
     let mut paths = Vec::new();
 
     for entry in entries {
@@ -1095,9 +1246,9 @@ fn validate_profile(profile: &Profile) -> Result<(), String> {
     Ok(())
 }
 
-fn build_report_text() -> String {
+fn build_report_text(config: &Config) -> String {
     let mut report = String::new();
-    let summary = build_report_summary();
+    let summary = build_report_summary(config);
 
     let _ = writeln!(report, "LocalAccessGuard Report");
     let _ = writeln!(report, "Version: {}", VERSION);
@@ -1113,14 +1264,14 @@ fn build_report_text() -> String {
     append_autoconfig_report(&mut report);
     append_winhttp_report(&mut report);
     append_network_info_report(&mut report);
-    append_udp_diagnostics_report(&mut report);
-    append_process_report(&mut report);
-    append_profiles_report(&mut report);
+    append_udp_diagnostics_report(&mut report, config);
+    append_process_report(&mut report, config);
+    append_profiles_report(&mut report, config);
 
     report
 }
 
-fn build_report_summary() -> ReportSummary {
+fn build_report_summary(config: &Config) -> ReportSummary {
     let mut summary = ReportSummary {
         profiles_tested: 0,
         dns_failures: 0,
@@ -1164,13 +1315,13 @@ fn build_report_summary() -> ReportSummary {
         summary.add_warning("AutoConfigURL / PAC proxy config exists.");
     }
 
-    add_process_warnings(&mut summary);
-    add_profile_results(&mut summary);
+    add_process_warnings(&mut summary, config);
+    add_profile_results(&mut summary, config);
 
     summary
 }
 
-fn add_process_warnings(summary: &mut ReportSummary) {
+fn add_process_warnings(summary: &mut ReportSummary, config: &Config) {
     let known_warning_processes = [
         "warp-svc.exe",
         "goodbyedpi.exe",
@@ -1191,16 +1342,16 @@ fn add_process_warnings(summary: &mut ReportSummary) {
             continue;
         }
 
-        if process == "warp-svc.exe" {
+        if process == "warp-svc.exe" && config.show_warp_warning {
             summary.add_warning("Cloudflare WARP service is running in the background.");
-        } else {
+        } else if process != "warp-svc.exe" {
             summary.add_warning(&format!("DPI/proxy tool process is active: {}", process));
         }
     }
 }
 
-fn add_profile_results(summary: &mut ReportSummary) {
-    let profiles = load_all_profiles();
+fn add_profile_results(summary: &mut ReportSummary, config: &Config) {
+    let profiles = load_report_profiles(config);
     summary.profiles_tested = profiles.len();
 
     if profiles.is_empty() {
@@ -1391,15 +1542,15 @@ fn append_network_info_report(report: &mut String) {
     let _ = writeln!(report);
 }
 
-fn append_udp_diagnostics_report(report: &mut String) {
-    let diagnostics = run_udp_diagnostics();
+fn append_udp_diagnostics_report(report: &mut String, config: &Config) {
+    let diagnostics = run_udp_diagnostics(&config.udp_test_target);
 
     let _ = writeln!(report, "[UDP Diagnostics]");
-    write_udp_diagnostics(report, &diagnostics);
+    write_udp_diagnostics(report, &diagnostics, &config.udp_test_target);
     let _ = writeln!(report);
 }
 
-fn append_process_report(report: &mut String) {
+fn append_process_report(report: &mut String, config: &Config) {
     let _ = writeln!(report, "[Known Network Tools]");
 
     let known_processes = [
@@ -1424,7 +1575,7 @@ fn append_process_report(report: &mut String) {
                 if text.contains(&process_lower) {
                     let _ = writeln!(report, "{}: Running", process);
 
-                    if process == "warp-svc.exe" {
+                    if process == "warp-svc.exe" && config.show_warp_warning {
                         let _ = writeln!(
                             report,
                             "Warning: Cloudflare WARP service is running in the background."
@@ -1454,12 +1605,16 @@ fn append_process_report(report: &mut String) {
     let _ = writeln!(report);
 }
 
-fn append_profiles_report(report: &mut String) {
-    let profiles = load_all_profiles();
+fn append_profiles_report(report: &mut String, config: &Config) {
+    let profiles = load_report_profiles(config);
 
     if profiles.is_empty() {
         let _ = writeln!(report, "[Profiles]");
-        let _ = writeln!(report, "No valid profiles found in profiles\\*.json");
+        let _ = writeln!(
+            report,
+            "No valid profiles found in {}\\*.json",
+            config.profile_directory
+        );
         let _ = writeln!(report);
         return;
     }

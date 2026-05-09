@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.2.0
+
+### Added
+- `config` command for showing effective configuration
+- `config.json` support
+- Configurable profile directory
+- Configurable report directory
+- Configurable default report profiles
+- Configurable UDP test target
+- Configurable Cloudflare WARP warning behavior
+
+### Changed
+- Profile loading now uses configured profile directory
+- Report generation now uses configured report directory
+- UDP diagnostics now use configured UDP test target
+
 ## v1.1.0
 
 ### Added

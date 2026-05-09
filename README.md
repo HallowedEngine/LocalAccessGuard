@@ -6,7 +6,7 @@ It checks Windows proxy-related settings, detects known network tools, runs prof
 
 ## Current Version
 
-v1.1.0
+v1.2.0
 
 ## Features
 
@@ -20,6 +20,7 @@ v1.1.0
 - Report comparison for before/after troubleshooting
 - Network adapter and DNS server inspection
 - Basic UDP diagnostics
+- Simple `config.json` support
 - Clear CLI help aliases and readable terminal status prefixes
 
 ## Commands
@@ -36,9 +37,22 @@ cargo run -- validate
 cargo run -- compare reports\old.txt reports\new.txt
 cargo run -- netinfo
 cargo run -- udpcheck
+cargo run -- config
 ```
 
-Profiles are loaded from `profiles/*.json`. Reports are saved under `reports/`.
+Profiles and reports use the effective configuration. By default, profiles are loaded from `profiles/*.json` and reports are saved under `reports/`.
+
+## Config
+
+LocalAccessGuard reads `config.json` from the project root when it exists. If the file is missing or invalid, built-in defaults are used so existing commands continue to work.
+
+Configurable values include the profile directory, report directory, default report profiles, UDP test target, and whether Cloudflare WARP warnings are shown and counted.
+
+Show the effective configuration with:
+
+```bash
+cargo run -- config
+```
 
 ## Profile Format
 
@@ -63,6 +77,7 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 ## Version History
 
+- v1.2.0: Added config.json support.
 - v1.1.0: Improved CLI help and terminal output readability.
 - v0.1.0: Initial diagnostic prototype.
 - v0.2.0: Added restore and proxy cleanup.

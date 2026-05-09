@@ -1,0 +1,7 @@
+{
+  "profile_directory": "profiles",
+  "report_directory": "reports",
+  "default_profiles": ["discord", "roblox"],
+  "udp_test_target": "1.1.1.1:53",
+  "show_warp_warning": true
+}
