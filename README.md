@@ -6,11 +6,11 @@ It checks Windows proxy-related settings, detects known network tools, runs prof
 
 ## Current Version
 
-v1.3.0
+v2.0.0
 
-## Stable v1.x Scope
+## Stable Scope
 
-LocalAccessGuard v1.x is a stable Windows network diagnostic CLI focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, and report comparison.
+LocalAccessGuard is a stable Windows network diagnostic CLI focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, and report comparison.
 
 It is:
 
@@ -94,6 +94,7 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 ## Version History
 
+- v2.0.0: Split code into smaller source modules for easier maintenance.
 - v1.3.0: Final v1 polish before v2.0 modular refactor.
 - v1.2.0: Added config.json support.
 - v1.1.0: Improved CLI help and terminal output readability.

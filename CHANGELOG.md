@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.0.0
+
+### Changed
+- Split the codebase into smaller Rust modules
+- Reduced the size and responsibility of `src/main.rs`
+- Improved project structure for future maintenance
+- Kept existing CLI behavior and report format stable
+
+### Verified
+- `help`
+- `config`
+- `status`
+- `restore`
+- `profiles`
+- `validate`
+- `doctor <profile>`
+- `report`
+- `compare <old_report> <new_report>`
+- `netinfo`
+- `udpcheck`
+
 ## v1.3.0
 
 ### Added

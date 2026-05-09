@@ -8,18 +8,15 @@ LocalAccessGuard v1.x is complete as a Windows network diagnostic CLI for proxy/
 
 Versions v1.4.0 through v1.9.0 are intentionally skipped so the project can move directly from the finalized v1.x line to the next major architecture milestone.
 
-## Next Major Milestone
+## Current Milestone
 
-v2.0.0 will focus on a modular architecture refactor.
+v2.0.0 is the current milestone and focuses on modular code organization. The large `src/main.rs` has been split into smaller source modules for easier maintenance.
 
 ## Planned v2.x Ideas
 
-- `src/config.rs`
-- `src/profiles.rs`
-- `src/network.rs`
-- `src/report.rs`
-- `src/diagnostics.rs`
-- `src/cli.rs`
 - Cleaner error handling
 - Easier testing
-- Future logging, report export, profile groups, and firewall inspection
+- Future logging
+- Additional report formats
+- Profile groups
+- Firewall inspection
