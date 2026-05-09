@@ -2,6 +2,12 @@
 
 LocalAccessGuard is a Rust-based Windows network diagnostic, cleanup, profile-checking, reporting, and desktop dashboard utility.
 
+## Screenshot
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="LocalAccessGuard Dashboard" width="900">
+</p>
+
 It checks Windows proxy-related settings, detects known network tools, runs profile-based DNS/TCP diagnostics, inspects network adapter and DNS configuration, runs basic UDP diagnostics, exports timestamped reports, inspects firewall rules and services read-only, and can safely clean stale proxy configuration.
 
 ## Current Version
