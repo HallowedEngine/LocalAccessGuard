@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.7.0
+
+### Added
+- `compare <old_report> <new_report>` command
+- Report summary comparison
+- Overall status comparison
+- Warning count comparison
+- DNS failure count comparison
+- TCP failure count comparison
+- Reason list diffing between two reports
+
+### Changed
+- Reports can now be used in before/after troubleshooting workflows
+
 ## v0.6.0
 
 ### Added
