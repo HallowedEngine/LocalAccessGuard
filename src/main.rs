@@ -9,13 +9,24 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const VERSION: &str = "v0.7.0";
+const VERSION: &str = "v0.8.0";
 
 #[derive(Debug, Deserialize)]
 struct Profile {
     name: String,
     domains: Vec<String>,
     tcp_test_domain: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct NetworkAdapterInfo {
+    name: String,
+    description: String,
+    status: String,
+    dhcp_enabled: String,
+    ipv4_address: String,
+    default_gateway: String,
+    dns_servers: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -88,6 +99,7 @@ fn main() {
         "validate" => validate_profiles(),
         "restore" => restore(),
         "report" => report(),
+        "netinfo" => netinfo(),
         "compare" => {
             if args.len() < 4 {
                 println!("Usage: lag compare <old_report> <new_report>");
@@ -111,6 +123,7 @@ fn print_help() {
     println!("  validate");
     println!("  restore");
     println!("  report");
+    println!("  netinfo");
     println!("  compare <old_report> <new_report>");
     println!();
     println!("Examples:");
@@ -199,6 +212,14 @@ fn status() {
     check_autoconfig_url();
     check_winhttp_proxy();
     check_processes();
+}
+
+fn netinfo() {
+    println!("=== Network Info ===");
+    println!();
+
+    let adapters = get_network_adapters();
+    print_network_adapters(&adapters);
 }
 
 fn doctor_profile(profile_name: &str) {
@@ -957,6 +978,7 @@ fn build_report_text() -> String {
     append_windows_proxy_report(&mut report);
     append_autoconfig_report(&mut report);
     append_winhttp_report(&mut report);
+    append_network_info_report(&mut report);
     append_process_report(&mut report);
     append_profiles_report(&mut report);
 
@@ -1177,6 +1199,63 @@ fn append_winhttp_report(report: &mut String) {
     let _ = writeln!(report);
 }
 
+fn append_network_info_report(report: &mut String) {
+    let _ = writeln!(report, "[Network Info]");
+
+    let adapters = get_network_adapters();
+
+    if adapters.is_empty() {
+        let _ = writeln!(report, "Adapter Name: Unknown");
+        let _ = writeln!(report, "Description: Unknown");
+        let _ = writeln!(report, "DHCP Enabled: Unknown");
+        let _ = writeln!(report, "IPv4 Address: Unknown");
+        let _ = writeln!(report, "Default Gateway: Unknown");
+        let _ = writeln!(report, "DNS Servers:");
+        let _ = writeln!(report, "- Unknown");
+        let _ = writeln!(report);
+        return;
+    }
+
+    for (index, adapter) in adapters.iter().enumerate() {
+        if index > 0 {
+            let _ = writeln!(report);
+        }
+
+        let _ = writeln!(report, "Adapter Name: {}", known_or_unknown(&adapter.name));
+        let _ = writeln!(
+            report,
+            "Description: {}",
+            known_or_unknown(&adapter.description)
+        );
+        let _ = writeln!(
+            report,
+            "DHCP Enabled: {}",
+            known_or_unknown(&adapter.dhcp_enabled)
+        );
+        let _ = writeln!(
+            report,
+            "IPv4 Address: {}",
+            known_or_unknown(&adapter.ipv4_address)
+        );
+        let _ = writeln!(
+            report,
+            "Default Gateway: {}",
+            known_or_unknown(&adapter.default_gateway)
+        );
+        let _ = writeln!(report, "DNS Servers:");
+
+        if adapter.dns_servers.is_empty() {
+            let _ = writeln!(report, "- Unknown");
+        } else {
+            for dns_server in &adapter.dns_servers {
+                let _ = writeln!(report, "- {}", dns_server);
+            }
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
 fn append_process_report(report: &mut String) {
     let _ = writeln!(report, "[Known Network Tools]");
 
@@ -1304,4 +1383,266 @@ fn get_tcp_443_result(domain: &str) -> String {
 
 fn is_ok_result(result: &str) -> bool {
     result.starts_with("OK")
+}
+
+fn get_network_adapters() -> Vec<NetworkAdapterInfo> {
+    let output = Command::new("ipconfig").arg("/all").output();
+
+    let text = match output {
+        Ok(result) => {
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let stderr = String::from_utf8_lossy(&result.stderr);
+
+            if !stdout.trim().is_empty() {
+                stdout.to_string()
+            } else {
+                stderr.to_string()
+            }
+        }
+        Err(_) => return Vec::new(),
+    };
+
+    let adapters = parse_ipconfig_adapters(&text);
+    let active_adapters: Vec<NetworkAdapterInfo> = adapters
+        .iter()
+        .filter(|adapter| !adapter.ipv4_address.is_empty() && !adapter.default_gateway.is_empty())
+        .cloned()
+        .collect();
+
+    if active_adapters.is_empty() {
+        adapters
+            .into_iter()
+            .filter(|adapter| !adapter.ipv4_address.is_empty())
+            .collect()
+    } else {
+        active_adapters
+    }
+}
+
+fn parse_ipconfig_adapters(text: &str) -> Vec<NetworkAdapterInfo> {
+    let mut adapters = Vec::new();
+    let mut current: Option<NetworkAdapterInfo> = None;
+    let mut reading_dns_servers = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            reading_dns_servers = false;
+            continue;
+        }
+
+        if is_adapter_heading(line) {
+            if let Some(adapter) = current.take() {
+                adapters.push(adapter);
+            }
+
+            current = Some(NetworkAdapterInfo {
+                name: parse_adapter_name(trimmed),
+                status: "Up".to_string(),
+                ..NetworkAdapterInfo::default()
+            });
+            reading_dns_servers = false;
+            continue;
+        }
+
+        let Some(adapter) = current.as_mut() else {
+            continue;
+        };
+
+        if reading_dns_servers && is_ip_address_like(trimmed) {
+            adapter.dns_servers.push(clean_ip_value(trimmed));
+            continue;
+        }
+
+        let Some((label, value)) = parse_ipconfig_field(trimmed) else {
+            reading_dns_servers = false;
+            continue;
+        };
+
+        if is_description_label(&label) {
+            adapter.description = value;
+            reading_dns_servers = false;
+        } else if is_dhcp_label(&label) {
+            adapter.dhcp_enabled = normalize_yes_no(&value);
+            reading_dns_servers = false;
+        } else if is_ipv4_label(&label) {
+            adapter.ipv4_address = clean_ip_value(&value);
+            reading_dns_servers = false;
+        } else if is_gateway_label(&label) {
+            adapter.default_gateway = clean_ip_value(&value);
+            reading_dns_servers = false;
+        } else if is_dns_label(&label) {
+            if !value.is_empty() {
+                adapter.dns_servers.push(clean_ip_value(&value));
+            }
+            reading_dns_servers = true;
+        } else {
+            reading_dns_servers = false;
+        }
+    }
+
+    if let Some(adapter) = current {
+        adapters.push(adapter);
+    }
+
+    adapters
+}
+
+fn print_network_adapters(adapters: &[NetworkAdapterInfo]) {
+    if adapters.is_empty() {
+        println!("[Adapter]");
+        println!("Name: Unknown");
+        println!("Description: Unknown");
+        println!("Status: Unknown");
+        println!("DHCP Enabled: Unknown");
+        println!("IPv4 Address: Unknown");
+        println!("Default Gateway: Unknown");
+        println!("DNS Servers:");
+        println!("- Unknown");
+        return;
+    }
+
+    for (index, adapter) in adapters.iter().enumerate() {
+        if index > 0 {
+            println!();
+        }
+
+        println!("[Adapter]");
+        println!("Name: {}", known_or_unknown(&adapter.name));
+        println!("Description: {}", known_or_unknown(&adapter.description));
+        println!("Status: {}", known_or_unknown(&adapter.status));
+        println!("DHCP Enabled: {}", known_or_unknown(&adapter.dhcp_enabled));
+        println!("IPv4 Address: {}", known_or_unknown(&adapter.ipv4_address));
+        println!(
+            "Default Gateway: {}",
+            known_or_unknown(&adapter.default_gateway)
+        );
+        println!("DNS Servers:");
+
+        if adapter.dns_servers.is_empty() {
+            println!("- Unknown");
+        } else {
+            for dns_server in &adapter.dns_servers {
+                println!("- {}", dns_server);
+            }
+        }
+    }
+}
+
+fn is_adapter_heading(line: &str) -> bool {
+    let trimmed = line.trim();
+
+    if !trimmed.ends_with(':') || trimmed.contains(". :") || trimmed.contains(" .") {
+        return false;
+    }
+
+    let normalized = normalize_label(trimmed);
+
+    normalized.contains("adapter")
+        || normalized.contains("bagdastir")
+        || normalized.contains("badatr")
+        || normalized.contains("badt")
+}
+
+fn parse_adapter_name(heading: &str) -> String {
+    let heading = heading.trim_end_matches(':').trim();
+    let mut parts = heading.rsplitn(2, ' ');
+
+    parts
+        .next()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| heading.to_string())
+}
+
+fn parse_ipconfig_field(line: &str) -> Option<(String, String)> {
+    let (label, value) = line.split_once(':')?;
+
+    Some((normalize_label(label), value.trim().to_string()))
+}
+
+fn is_description_label(label: &str) -> bool {
+    label.contains("description") || label.contains("aciklama") || label.contains("klama")
+}
+
+fn is_dhcp_label(label: &str) -> bool {
+    label.contains("dhcp") && (label.contains("enabled") || label.contains("etkin"))
+}
+
+fn is_ipv4_label(label: &str) -> bool {
+    label.contains("ipv4")
+}
+
+fn is_gateway_label(label: &str) -> bool {
+    label.contains("default gateway")
+        || label.contains("varsay")
+        || label.contains("ag gecidi")
+        || label.contains("gecidi")
+}
+
+fn is_dns_label(label: &str) -> bool {
+    label.contains("dns") && (label.contains("server") || label.contains("sunucu"))
+}
+
+fn normalize_label(label: &str) -> String {
+    label
+        .chars()
+        .map(|character| match character {
+            'A'..='Z' => character.to_ascii_lowercase(),
+            'a'..='z' | '0'..='9' | ' ' => character,
+            'Ç' | 'ç' => 'c',
+            'Ğ' | 'ğ' => 'g',
+            'İ' | 'ı' => 'i',
+            'Ö' | 'ö' => 'o',
+            'Ş' | 'ş' => 's',
+            'Ü' | 'ü' => 'u',
+            _ => ' ',
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn clean_ip_value(value: &str) -> String {
+    let before_marker = value
+        .split_once('(')
+        .map(|(left, _)| left)
+        .unwrap_or(value)
+        .trim();
+
+    before_marker
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_matches(',')
+        .trim()
+        .to_string()
+}
+
+fn is_ip_address_like(value: &str) -> bool {
+    let value = clean_ip_value(value);
+    value.chars().any(|character| character.is_ascii_digit())
+        && (value.contains('.') || value.contains(':'))
+}
+
+fn normalize_yes_no(value: &str) -> String {
+    let normalized = normalize_label(value);
+
+    if normalized == "yes" || normalized == "evet" {
+        "Yes".to_string()
+    } else if normalized == "no" || normalized == "hayir" {
+        "No".to_string()
+    } else {
+        value.trim().to_string()
+    }
+}
+
+fn known_or_unknown(value: &str) -> &str {
+    if value.trim().is_empty() {
+        "Unknown"
+    } else {
+        value
+    }
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.8.0
+
+### Added
+- `netinfo` command for Windows network adapter inspection
+- Active network adapter information
+- IPv4 address reporting
+- Default gateway reporting
+- DNS server reporting
+- DHCP status reporting
+- Network info section in generated reports
+
+### Changed
+- Report output now includes network adapter and DNS configuration details
+
 ## v0.7.0
 
 ### Added
