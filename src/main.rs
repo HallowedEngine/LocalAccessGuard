@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const VERSION: &str = "v0.9.0";
+const VERSION: &str = "v1.0.0";
 const UDP_TEST_TARGET: &str = "1.1.1.1:53";
 const UDP_NOTE: &str = "This is a basic local UDP capability check. It does not guarantee that every game or voice service UDP path is reachable.";
 

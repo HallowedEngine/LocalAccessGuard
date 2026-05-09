@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.0.0
+
+### Added
+- First stable CLI release
+- Finalized command set for v1.0.0
+- Stable release documentation
+
+### Changed
+- Updated project version to v1.0.0
+- Updated README version history
+- Prepared the project for portfolio/release usage
+
+### Verified
+- `status`
+- `restore`
+- `profiles`
+- `validate`
+- `doctor <profile>`
+- `report`
+- `compare <old_report> <new_report>`
+- `netinfo`
+- `udpcheck`
+
 ## v0.9.0
 
 ### Added

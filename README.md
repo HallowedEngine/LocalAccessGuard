@@ -1,90 +1,46 @@
 # LocalAccessGuard
 
-LocalAccessGuard is a Rust-based Windows CLI network diagnostic and cleanup utility.
+LocalAccessGuard is a Rust-based Windows network diagnostic, cleanup, profile-checking, and reporting CLI utility.
 
-It checks Windows proxy-related settings, detects known network tools, runs profile-based DNS/TCP diagnostics, exports timestamped reports, and can safely clean stale proxy configuration.
+It checks Windows proxy-related settings, detects known network tools, runs profile-based DNS/TCP diagnostics, inspects network adapter and DNS configuration, runs basic UDP diagnostics, exports timestamped reports, and can safely clean stale proxy configuration.
 
 ## Current Version
 
-v0.5.0
+v1.0.0
 
 ## Features
 
-- Windows Proxy inspection
-- AutoConfigURL / PAC proxy inspection
-- WinHTTP proxy inspection
+- Windows proxy, PAC, and WinHTTP proxy inspection
 - Known network tool process detection
-- Cloudflare WARP service warning
-- GoodbyeDPI / BypaxDPI process detection
-- Profile-based diagnostics with JSON files
-- DNS resolution tests
-- TCP 443 connectivity tests
-- Safe restore / cleanup command
-- Timestamped diagnostic report export
-- Profile listing
-- Profile validation
+- Safe proxy restore and cleanup
+- JSON profile-based diagnostics
+- DNS resolution and TCP 443 connectivity tests
+- Profile listing and validation
+- Timestamped diagnostic reports with summaries and risk scoring
+- Report comparison for before/after troubleshooting
+- Network adapter and DNS server inspection
+- Basic UDP diagnostics
 
 ## Commands
 
-### Show system status
-
 ```bash
 cargo run -- status
-
-Checks:
-
-Windows Proxy
-AutoConfigURL / PAC proxy
-WinHTTP proxy
-Known network tool processes
-Run diagnostics for a profile
+cargo run -- restore
+cargo run -- report
 cargo run -- doctor discord
 cargo run -- doctor roblox
-
-Profiles are loaded from:
-
-profiles/*.json
-List available profiles
 cargo run -- profiles
-
-Example output:
-
-Available profiles:
-- discord: Discord
-- roblox: Roblox
-Validate profiles
 cargo run -- validate
+cargo run -- compare reports\old.txt reports\new.txt
+cargo run -- netinfo
+cargo run -- udpcheck
+```
 
-Validation checks:
+Profiles are loaded from `profiles/*.json`. Reports are saved under `reports/`.
 
-JSON syntax
-Empty profile name
-Empty domain list
-Empty domain entries
-Empty TCP test domain
-Generate report
-cargo run -- report
+## Profile Format
 
-Reports are saved under:
-
-reports/
-
-Example:
-
-reports/local_access_report_2026-05-09_15-42-34.txt
-Restore proxy settings
-cargo run -- restore
-
-Restore action:
-
-Disables Windows user proxy
-Deletes stale ProxyServer entry
-Deletes AutoConfigURL / PAC proxy entry
-Resets WinHTTP proxy only when needed
-Profile Format
-
-Example profiles/discord.json:
-
+```json
 {
   "name": "Discord",
   "domains": [
@@ -93,50 +49,31 @@ Example profiles/discord.json:
   ],
   "tcp_test_domain": "discord.com"
 }
+```
 
-Example profiles/roblox.json:
+## Release Build
 
-{
-  "name": "Roblox",
-  "domains": [
-    "roblox.com",
-    "www.roblox.com"
-  ],
-  "tcp_test_domain": "roblox.com"
-}
-Release Build
+```bash
 cargo build --release
+```
 
-Release executable path:
+The release executable is created at `target/release/LocalAccessGuard.exe`.
 
-target/release/LocalAccessGuard.exe
+## Version History
 
-Versioned release binaries are kept locally under:
+- v0.1.0: Initial diagnostic prototype.
+- v0.2.0: Added restore and proxy cleanup.
+- v0.3.0: Added timestamped diagnostic report export.
+- v0.4.0: Added JSON profile system.
+- v0.5.0: Added profile listing and profile validation.
+- v0.6.0: Added report summary and risk scoring.
+- v0.7.0: Added report comparison.
+- v0.8.0: Added network adapter and DNS server inspection.
+- v0.9.0: Added basic UDP diagnostics.
+- v1.0.0: First stable CLI release.
 
-releases/
-Version History
-v0.1.0
+## Notes
 
-Initial diagnostic prototype.
+LocalAccessGuard is not a VPN, bypass tool, proxy engine, packet manipulation engine, or engine wrapper.
 
-v0.2.0
-
-Added restore and proxy cleanup.
-
-v0.3.0
-
-Added timestamped diagnostic report export.
-
-v0.4.0
-
-Added JSON profile system.
-
-v0.5.0
-
-Added profile listing and profile validation.
-
-Notes
-
-LocalAccessGuard does not act as a VPN, proxy, packet manipulation engine, or DPI bypass engine.
-
-It is currently a local diagnostic, cleanup, and reporting utility.
+It is a Windows network diagnostic, cleanup, profile-checking, and reporting CLI utility.
