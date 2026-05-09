@@ -1,0 +1,8 @@
+{
+  "name": "Discord",
+  "domains": [
+    "discord.com",
+    "discord.gg"
+  ],
+  "tcp_test_domain": "discord.com"
+}

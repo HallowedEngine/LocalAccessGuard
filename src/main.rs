@@ -1,4 +1,5 @@
 use chrono::Local;
+use serde::Deserialize;
 use std::env;
 use std::fmt::Write as _;
 use std::fs::{self, File};
@@ -6,6 +7,13 @@ use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::process::Command;
 use std::time::Duration;
+
+#[derive(Debug, Deserialize)]
+struct Profile {
+    name: String,
+    domains: Vec<String>,
+    tcp_test_domain: String,
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -19,15 +27,13 @@ fn main() {
         "status" => status(),
         "doctor" => {
             if args.len() < 3 {
-                println!("Usage: lag doctor <discord|roblox>");
+                println!("Usage: lag doctor <profile>");
+                println!("Example: lag doctor discord");
+                println!("Example: lag doctor roblox");
                 return;
             }
 
-            match args[2].as_str() {
-                "discord" => doctor_discord(),
-                "roblox" => doctor_roblox(),
-                _ => println!("Unknown profile: {}", args[2]),
-            }
+            doctor_profile(&args[2]);
         }
         "restore" => restore(),
         "report" => report(),
@@ -36,14 +42,17 @@ fn main() {
 }
 
 fn print_help() {
-    println!("LocalAccessGuard v0.3.0");
+    println!("LocalAccessGuard v0.4.0");
     println!();
     println!("Commands:");
     println!("  status");
-    println!("  doctor discord");
-    println!("  doctor roblox");
+    println!("  doctor <profile>");
     println!("  restore");
     println!("  report");
+    println!();
+    println!("Examples:");
+    println!("  doctor discord");
+    println!("  doctor roblox");
 }
 
 fn status() {
@@ -56,23 +65,24 @@ fn status() {
     check_processes();
 }
 
-fn doctor_discord() {
-    println!("=== Doctor: Discord ===");
+fn doctor_profile(profile_name: &str) {
+    let profile = match load_profile(profile_name) {
+        Ok(profile) => profile,
+        Err(err) => {
+            println!("Failed to load profile '{}': {}", profile_name, err);
+            println!("Expected file: profiles\\{}.json", profile_name);
+            return;
+        }
+    };
+
+    println!("=== Doctor: {} ===", profile.name);
     println!();
 
-    check_domain("discord.com");
-    check_domain("discord.gg");
-    check_tcp_443("discord.com");
-    check_processes();
-}
+    for domain in &profile.domains {
+        check_domain(domain);
+    }
 
-fn doctor_roblox() {
-    println!("=== Doctor: Roblox ===");
-    println!();
-
-    check_domain("roblox.com");
-    check_domain("www.roblox.com");
-    check_tcp_443("roblox.com");
+    check_tcp_443(&profile.tcp_test_domain);
     check_processes();
 }
 
@@ -491,11 +501,81 @@ fn reset_winhttp_proxy() {
     }
 }
 
+fn load_profile(profile_name: &str) -> Result<Profile, String> {
+    let file_path = format!("profiles\\{}.json", profile_name);
+
+    let text = fs::read_to_string(&file_path)
+        .map_err(|err| format!("could not read {}: {}", file_path, err))?;
+
+    let profile: Profile =
+        serde_json::from_str(&text).map_err(|err| format!("invalid JSON: {}", err))?;
+
+    if profile.name.trim().is_empty() {
+        return Err("profile name is empty".to_string());
+    }
+
+    if profile.domains.is_empty() {
+        return Err("profile domains list is empty".to_string());
+    }
+
+    if profile.tcp_test_domain.trim().is_empty() {
+        return Err("tcp_test_domain is empty".to_string());
+    }
+
+    Ok(profile)
+}
+
+fn load_all_profiles() -> Vec<Profile> {
+    let mut profiles = Vec::new();
+
+    let entries = match fs::read_dir("profiles") {
+        Ok(entries) => entries,
+        Err(_) => return profiles,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        let is_json = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("json"))
+            .unwrap_or(false);
+
+        if !is_json {
+            continue;
+        }
+
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(_) => continue,
+        };
+
+        let profile: Profile = match serde_json::from_str(&text) {
+            Ok(profile) => profile,
+            Err(_) => continue,
+        };
+
+        if profile.name.trim().is_empty()
+            || profile.domains.is_empty()
+            || profile.tcp_test_domain.trim().is_empty()
+        {
+            continue;
+        }
+
+        profiles.push(profile);
+    }
+
+    profiles.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+
+    profiles
+}
+
 fn build_report_text() -> String {
     let mut report = String::new();
 
     let _ = writeln!(report, "LocalAccessGuard Report");
-    let _ = writeln!(report, "Version: v0.3.0");
+    let _ = writeln!(report, "Version: v0.4.0");
     let _ = writeln!(
         report,
         "Generated: {}",
@@ -507,18 +587,7 @@ fn build_report_text() -> String {
     append_autoconfig_report(&mut report);
     append_winhttp_report(&mut report);
     append_process_report(&mut report);
-    append_service_report(
-        &mut report,
-        "Discord",
-        &["discord.com", "discord.gg"],
-        "discord.com",
-    );
-    append_service_report(
-        &mut report,
-        "Roblox",
-        &["roblox.com", "www.roblox.com"],
-        "roblox.com",
-    );
+    append_profiles_report(&mut report);
 
     report
 }
@@ -663,10 +732,30 @@ fn append_process_report(report: &mut String) {
     let _ = writeln!(report);
 }
 
+fn append_profiles_report(report: &mut String) {
+    let profiles = load_all_profiles();
+
+    if profiles.is_empty() {
+        let _ = writeln!(report, "[Profiles]");
+        let _ = writeln!(report, "No valid profiles found in profiles\\*.json");
+        let _ = writeln!(report);
+        return;
+    }
+
+    for profile in profiles {
+        append_service_report(
+            report,
+            &profile.name,
+            &profile.domains,
+            &profile.tcp_test_domain,
+        );
+    }
+}
+
 fn append_service_report(
     report: &mut String,
     service_name: &str,
-    domains: &[&str],
+    domains: &[String],
     tcp_test_domain: &str,
 ) {
     let _ = writeln!(report, "[{}]", service_name);

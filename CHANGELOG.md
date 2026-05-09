@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.0
+
+### Added
+- JSON profile system
+- `profiles/discord.json`
+- `profiles/roblox.json`
+- `doctor <profile>` now loads profile data from JSON
+- `report` now includes diagnostics for all JSON profiles
+
+### Changed
+- Discord and Roblox domains are no longer hardcoded in command routing
+- Service diagnostics are now profile-driven
+
 ## v0.3.0
 
 ### Added
