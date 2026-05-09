@@ -5,8 +5,11 @@ use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
+
+const VERSION: &str = "v0.5.0";
 
 #[derive(Debug, Deserialize)]
 struct Profile {
@@ -35,6 +38,8 @@ fn main() {
 
             doctor_profile(&args[2]);
         }
+        "profiles" => profiles(),
+        "validate" => validate_profiles(),
         "restore" => restore(),
         "report" => report(),
         _ => print_help(),
@@ -42,17 +47,91 @@ fn main() {
 }
 
 fn print_help() {
-    println!("LocalAccessGuard v0.4.0");
+    println!("LocalAccessGuard {}", VERSION);
     println!();
     println!("Commands:");
     println!("  status");
     println!("  doctor <profile>");
+    println!("  profiles");
+    println!("  validate");
     println!("  restore");
     println!("  report");
     println!();
     println!("Examples:");
     println!("  doctor discord");
     println!("  doctor roblox");
+}
+
+fn profiles() {
+    let entries = match profile_files() {
+        Ok(entries) => entries,
+        Err(_) => {
+            println!("No valid profiles found.");
+            return;
+        }
+    };
+
+    let mut valid_profiles = Vec::new();
+
+    for path in entries {
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(_) => continue,
+        };
+
+        let profile = match parse_and_validate_profile(&text) {
+            Ok(profile) => profile,
+            Err(_) => continue,
+        };
+
+        let key = match profile_key_from_path(&path) {
+            Some(key) => key,
+            None => continue,
+        };
+
+        valid_profiles.push((key, profile.name));
+    }
+
+    if valid_profiles.is_empty() {
+        println!("No valid profiles found.");
+        return;
+    }
+
+    valid_profiles.sort_by(|left, right| left.0.cmp(&right.0));
+
+    println!("Available profiles:");
+    for (key, name) in valid_profiles {
+        println!("- {}: {}", key, name);
+    }
+}
+
+fn validate_profiles() {
+    let entries = match profile_files() {
+        Ok(entries) => entries,
+        Err(err) => {
+            println!("Could not read profiles directory: {}", err);
+            return;
+        }
+    };
+
+    println!("Profile validation:");
+
+    for path in entries {
+        let display_path = path.to_string_lossy();
+
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(err) => {
+                println!("{}: INVALID - could not read file: {}", display_path, err);
+                continue;
+            }
+        };
+
+        match parse_and_validate_profile(&text) {
+            Ok(_) => println!("{}: OK", display_path),
+            Err(err) => println!("{}: INVALID - {}", display_path, err),
+        }
+    }
 }
 
 fn status() {
@@ -507,61 +586,27 @@ fn load_profile(profile_name: &str) -> Result<Profile, String> {
     let text = fs::read_to_string(&file_path)
         .map_err(|err| format!("could not read {}: {}", file_path, err))?;
 
-    let profile: Profile =
-        serde_json::from_str(&text).map_err(|err| format!("invalid JSON: {}", err))?;
-
-    if profile.name.trim().is_empty() {
-        return Err("profile name is empty".to_string());
-    }
-
-    if profile.domains.is_empty() {
-        return Err("profile domains list is empty".to_string());
-    }
-
-    if profile.tcp_test_domain.trim().is_empty() {
-        return Err("tcp_test_domain is empty".to_string());
-    }
-
-    Ok(profile)
+    parse_and_validate_profile(&text)
 }
 
 fn load_all_profiles() -> Vec<Profile> {
     let mut profiles = Vec::new();
 
-    let entries = match fs::read_dir("profiles") {
+    let entries = match profile_files() {
         Ok(entries) => entries,
         Err(_) => return profiles,
     };
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        let is_json = path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .map(|extension| extension.eq_ignore_ascii_case("json"))
-            .unwrap_or(false);
-
-        if !is_json {
-            continue;
-        }
-
+    for path in entries {
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
             Err(_) => continue,
         };
 
-        let profile: Profile = match serde_json::from_str(&text) {
+        let profile = match parse_and_validate_profile(&text) {
             Ok(profile) => profile,
             Err(_) => continue,
         };
-
-        if profile.name.trim().is_empty()
-            || profile.domains.is_empty()
-            || profile.tcp_test_domain.trim().is_empty()
-        {
-            continue;
-        }
 
         profiles.push(profile);
     }
@@ -571,11 +616,77 @@ fn load_all_profiles() -> Vec<Profile> {
     profiles
 }
 
+fn profile_files() -> Result<Vec<PathBuf>, String> {
+    let entries = fs::read_dir("profiles").map_err(|err| err.to_string())?;
+    let mut paths = Vec::new();
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+
+        let path = entry.path();
+
+        let is_json = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("json"))
+            .unwrap_or(false);
+
+        if is_json {
+            paths.push(path);
+        }
+    }
+
+    paths.sort();
+    Ok(paths)
+}
+
+fn profile_key_from_path(path: &Path) -> Option<String> {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(|stem| stem.to_string())
+}
+
+fn parse_and_validate_profile(text: &str) -> Result<Profile, String> {
+    let profile: Profile =
+        serde_json::from_str(text).map_err(|err| format!("invalid JSON: {}", err))?;
+
+    validate_profile(&profile)?;
+
+    Ok(profile)
+}
+
+fn validate_profile(profile: &Profile) -> Result<(), String> {
+    if profile.name.trim().is_empty() {
+        return Err("missing or empty name".to_string());
+    }
+
+    if profile.domains.is_empty() {
+        return Err("missing or empty domains".to_string());
+    }
+
+    if profile
+        .domains
+        .iter()
+        .any(|domain| domain.trim().is_empty())
+    {
+        return Err("domains contains empty entry".to_string());
+    }
+
+    if profile.tcp_test_domain.trim().is_empty() {
+        return Err("missing or empty tcp_test_domain".to_string());
+    }
+
+    Ok(())
+}
+
 fn build_report_text() -> String {
     let mut report = String::new();
 
     let _ = writeln!(report, "LocalAccessGuard Report");
-    let _ = writeln!(report, "Version: v0.4.0");
+    let _ = writeln!(report, "Version: {}", VERSION);
     let _ = writeln!(
         report,
         "Generated: {}",

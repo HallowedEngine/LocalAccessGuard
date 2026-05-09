@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.0
+
+### Added
+- `profiles` command for listing valid JSON profiles
+- `validate` command for validating profile JSON files
+- Validation for empty profile names
+- Validation for empty domain lists
+- Validation for empty domain entries
+- Validation for empty TCP test domains
+
+### Changed
+- Profile handling is now easier to inspect from the CLI
+
 ## v0.4.0
 
 ### Added
