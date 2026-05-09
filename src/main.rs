@@ -9,13 +9,49 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const VERSION: &str = "v0.5.0";
+const VERSION: &str = "v0.6.0";
 
 #[derive(Debug, Deserialize)]
 struct Profile {
     name: String,
     domains: Vec<String>,
     tcp_test_domain: String,
+}
+
+#[derive(Debug)]
+struct ReportSummary {
+    profiles_tested: usize,
+    dns_failures: usize,
+    tcp_failures: usize,
+    warnings: usize,
+    reasons: Vec<String>,
+}
+
+impl ReportSummary {
+    fn overall_status(&self) -> &'static str {
+        if self.dns_failures > 0 || self.tcp_failures > 0 {
+            "PROBLEM"
+        } else if self.warnings > 0 {
+            "WARNING"
+        } else {
+            "OK"
+        }
+    }
+
+    fn add_warning(&mut self, reason: &str) {
+        self.warnings += 1;
+        self.reasons.push(reason.to_string());
+    }
+
+    fn add_dns_failure(&mut self, domain: &str) {
+        self.dns_failures += 1;
+        self.reasons.push(format!("DNS failed for {}.", domain));
+    }
+
+    fn add_tcp_failure(&mut self, domain: &str) {
+        self.tcp_failures += 1;
+        self.reasons.push(format!("TCP 443 failed for {}.", domain));
+    }
 }
 
 fn main() {
@@ -684,6 +720,7 @@ fn validate_profile(profile: &Profile) -> Result<(), String> {
 
 fn build_report_text() -> String {
     let mut report = String::new();
+    let summary = build_report_summary();
 
     let _ = writeln!(report, "LocalAccessGuard Report");
     let _ = writeln!(report, "Version: {}", VERSION);
@@ -693,6 +730,7 @@ fn build_report_text() -> String {
         Local::now().format("%Y-%m-%d %H:%M:%S")
     );
     let _ = writeln!(report);
+    append_report_summary(&mut report, &summary);
 
     append_windows_proxy_report(&mut report);
     append_autoconfig_report(&mut report);
@@ -701,6 +739,131 @@ fn build_report_text() -> String {
     append_profiles_report(&mut report);
 
     report
+}
+
+fn build_report_summary() -> ReportSummary {
+    let mut summary = ReportSummary {
+        profiles_tested: 0,
+        dns_failures: 0,
+        tcp_failures: 0,
+        warnings: 0,
+        reasons: Vec::new(),
+    };
+
+    let proxy_enable = read_reg_value(
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        "ProxyEnable",
+    );
+
+    if proxy_enable
+        .as_deref()
+        .map(|text| text.contains("0x1"))
+        .unwrap_or(false)
+    {
+        summary.add_warning("Windows proxy is currently active.");
+    }
+
+    let proxy_server = read_reg_value(
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        "ProxyServer",
+    );
+
+    if proxy_server
+        .as_deref()
+        .map(|text| text.contains("127.0.0.1") || text.contains("localhost"))
+        .unwrap_or(false)
+    {
+        summary.add_warning("Stale local proxy entry exists.");
+    }
+
+    if read_reg_value(
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        "AutoConfigURL",
+    )
+    .is_some()
+    {
+        summary.add_warning("AutoConfigURL / PAC proxy config exists.");
+    }
+
+    add_process_warnings(&mut summary);
+    add_profile_results(&mut summary);
+
+    summary
+}
+
+fn add_process_warnings(summary: &mut ReportSummary) {
+    let known_warning_processes = [
+        "warp-svc.exe",
+        "goodbyedpi.exe",
+        "bypax-proxy.exe",
+        "BypaxDPI.exe",
+    ];
+    let output = Command::new("tasklist").output();
+
+    let text = match output {
+        Ok(result) => String::from_utf8_lossy(&result.stdout).to_lowercase(),
+        Err(_) => return,
+    };
+
+    for process in known_warning_processes {
+        let process_lower = process.to_lowercase();
+
+        if !text.contains(&process_lower) {
+            continue;
+        }
+
+        if process == "warp-svc.exe" {
+            summary.add_warning("Cloudflare WARP service is running in the background.");
+        } else {
+            summary.add_warning(&format!("DPI/proxy tool process is active: {}", process));
+        }
+    }
+}
+
+fn add_profile_results(summary: &mut ReportSummary) {
+    let profiles = load_all_profiles();
+    summary.profiles_tested = profiles.len();
+
+    if profiles.is_empty() {
+        summary.add_warning("No valid profiles found.");
+        return;
+    }
+
+    for profile in profiles {
+        for domain in &profile.domains {
+            let dns_result = get_dns_result(domain);
+
+            if !is_ok_result(&dns_result) {
+                summary.add_dns_failure(domain);
+            }
+        }
+
+        let tcp_result = get_tcp_443_result(&profile.tcp_test_domain);
+
+        if !is_ok_result(&tcp_result) {
+            summary.add_tcp_failure(&profile.tcp_test_domain);
+        }
+    }
+}
+
+fn append_report_summary(report: &mut String, summary: &ReportSummary) {
+    let _ = writeln!(report, "[Summary]");
+    let _ = writeln!(report, "Profiles tested: {}", summary.profiles_tested);
+    let _ = writeln!(report, "DNS failures: {}", summary.dns_failures);
+    let _ = writeln!(report, "TCP failures: {}", summary.tcp_failures);
+    let _ = writeln!(report, "Warnings: {}", summary.warnings);
+    let _ = writeln!(report, "Overall status: {}", summary.overall_status());
+    let _ = writeln!(report, "Reasons:");
+
+    if summary.reasons.is_empty() {
+        let _ = writeln!(report, "- None.");
+    } else {
+        for reason in &summary.reasons {
+            let _ = writeln!(report, "- {}", reason);
+        }
+    }
+
+    let _ = writeln!(report);
 }
 
 fn append_windows_proxy_report(report: &mut String) {
@@ -828,7 +991,11 @@ fn append_process_report(report: &mut String) {
                         || process == "bypax-proxy.exe"
                         || process == "BypaxDPI.exe"
                     {
-                        let _ = writeln!(report, "Warning: DPI/proxy tool process is active.");
+                        let _ = writeln!(
+                            report,
+                            "Warning: DPI/proxy tool process is active: {}",
+                            process
+                        );
                     }
                 } else {
                     let _ = writeln!(report, "{}: Not running", process);
@@ -911,4 +1078,8 @@ fn get_tcp_443_result(domain: &str) -> String {
         }
         Err(err) => format!("FAILED - could not resolve address: {}", err),
     }
+}
+
+fn is_ok_result(result: &str) -> bool {
+    result.starts_with("OK")
 }

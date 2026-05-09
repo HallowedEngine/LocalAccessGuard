@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.6.0
+
+### Added
+- Report summary section
+- Basic risk scoring for generated reports
+- Warning count in report output
+- DNS failure count in report output
+- TCP failure count in report output
+- Overall status field in report output
+- Human-readable reasons for warnings and failures
+
+### Changed
+- Report output now starts with a summary before detailed diagnostics
+
 ## v0.5.0
 
 ### Added
