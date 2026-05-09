@@ -10,13 +10,14 @@ Versions v1.4.0 through v1.9.0 are intentionally skipped so the project can move
 
 ## Current Milestone
 
-v2.0.0 is the current milestone and focuses on modular code organization. The large `src/main.rs` has been split into smaller source modules for easier maintenance.
+v2.1.0 is the current milestone and focuses on report, log, and group improvements: unique report filenames, simple local logging, report format options, and profile groups.
 
 ## Planned v2.x Ideas
 
 - Cleaner error handling
 - Easier testing
-- Future logging
-- Additional report formats
-- Profile groups
 - Firewall inspection
+
+## Future v3.0.0 Milestone
+
+v3.0.0 remains a future GUI milestone.

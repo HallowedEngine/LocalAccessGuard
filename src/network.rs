@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::profiles::load_profile;
 use crate::windows::check_processes;
+use serde::Serialize;
 use std::fmt::Write as _;
 use std::net::{TcpStream, ToSocketAddrs, UdpSocket};
 use std::path::Path;
@@ -9,18 +10,18 @@ use std::time::Duration;
 
 const UDP_NOTE: &str = "This is a basic local UDP capability check. It does not guarantee that every game or voice service UDP path is reachable.";
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub(crate) struct UdpDiagnosticResult {
-    bind_error: Option<String>,
-    local_socket: Option<String>,
-    connect_error: Option<String>,
+    pub(crate) bind_error: Option<String>,
+    pub(crate) local_socket: Option<String>,
+    pub(crate) connect_error: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct NetworkAdapterInfo {
     pub(crate) name: String,
     pub(crate) description: String,
-    status: String,
+    pub(crate) status: String,
     pub(crate) dhcp_enabled: String,
     pub(crate) ipv4_address: String,
     pub(crate) default_gateway: String,

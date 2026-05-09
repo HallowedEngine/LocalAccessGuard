@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.1.0
+
+### Added
+- Unique report filenames with millisecond timestamps
+- Simple local logging under `logs/local_access_guard.log`
+- Report format option: `txt`, `json`, and `md`
+- `groups` command for listing profile groups
+- `doctor-group <group>` command for running checks against grouped profiles
+- Default `groups/gaming.json`
+
+### Changed
+- `report` now supports `--format <txt|json|md>`
+- Config now supports group and log directories
+- Config now supports enabling or disabling local logging
+
+### Notes
+- Default `report` behavior still generates plain text reports
+- GUI, firewall inspection, service inspection, and system suggestions are not part of this version
+
 ## v2.0.0
 
 ### Changed

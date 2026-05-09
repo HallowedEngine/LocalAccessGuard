@@ -1,19 +1,51 @@
 use crate::VERSION;
 use crate::config::Config;
+use crate::logger;
 use crate::network::{
-    get_dns_result, get_network_adapters, get_tcp_443_result, is_ok_result, known_or_unknown,
-    run_udp_diagnostics, write_udp_diagnostics,
+    NetworkAdapterInfo, UdpDiagnosticResult, get_dns_result, get_network_adapters,
+    get_tcp_443_result, is_ok_result, known_or_unknown, run_udp_diagnostics, write_udp_diagnostics,
 };
 use crate::profiles::load_report_profiles;
 use crate::windows::read_reg_value;
 use chrono::Local;
+use serde::Serialize;
 use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ReportFormat {
+    Txt,
+    Json,
+    Md,
+}
+
+impl ReportFormat {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value.to_lowercase().as_str() {
+            "txt" => Some(Self::Txt),
+            "json" => Some(Self::Json),
+            "md" | "markdown" => Some(Self::Md),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Txt => "txt",
+            Self::Json => "json",
+            Self::Md => "md",
+        }
+    }
+
+    fn extension(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+#[derive(Debug, Serialize)]
 struct ReportSummary {
     profiles_tested: usize,
     dns_failures: usize,
@@ -49,11 +81,56 @@ impl ReportSummary {
     }
 }
 
-pub fn report(config: &Config) {
+#[derive(Debug, Serialize)]
+struct JsonReport {
+    version: String,
+    generated: String,
+    summary: ReportSummary,
+    windows_proxy: String,
+    auto_proxy: String,
+    winhttp_proxy: String,
+    network_info: Vec<NetworkAdapterInfo>,
+    udp_diagnostics: UdpDiagnosticResult,
+    known_network_tools: Vec<ProcessReport>,
+    profiles: Vec<ProfileReport>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProcessReport {
+    name: String,
+    running: bool,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProfileReport {
+    name: String,
+    domains: Vec<DomainReport>,
+    tcp_test_domain: String,
+    tcp_443: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DomainReport {
+    domain: String,
+    dns: String,
+}
+
+pub fn report(config: &Config, format: ReportFormat) {
     println!("=== LocalAccessGuard Report ===");
     println!();
 
-    let report_text = build_report_text(config);
+    let report_content = match format {
+        ReportFormat::Txt => build_report_text(config),
+        ReportFormat::Json => match build_report_json(config) {
+            Ok(json) => json,
+            Err(err) => {
+                println!("[FAILED] Failed to build JSON report: {}", err);
+                return;
+            }
+        },
+        ReportFormat::Md => build_report_markdown(config),
+    };
 
     match fs::create_dir_all(&config.report_directory) {
         Ok(_) => {}
@@ -63,9 +140,7 @@ pub fn report(config: &Config) {
         }
     }
 
-    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let file_path =
-        Path::new(&config.report_directory).join(format!("local_access_report_{}.txt", timestamp));
+    let file_path = unique_report_path(&config.report_directory, format);
 
     let file_result = File::create(&file_path);
 
@@ -77,14 +152,44 @@ pub fn report(config: &Config) {
         }
     };
 
-    match file.write_all(report_text.as_bytes()) {
+    match file.write_all(report_content.as_bytes()) {
         Ok(_) => {
             println!("[OK] Report saved:");
             println!("{}", file_path.to_string_lossy());
+            logger::info(
+                config,
+                &format!(
+                    "command=report format={} path={}",
+                    format.as_str(),
+                    file_path.to_string_lossy()
+                ),
+            );
         }
         Err(err) => {
             println!("[FAILED] Failed to write report file: {}", err);
         }
+    }
+}
+
+fn unique_report_path(report_directory: &str, format: ReportFormat) -> PathBuf {
+    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S_%3f");
+    let base_name = format!("local_access_report_{}", timestamp);
+    let directory = Path::new(report_directory);
+    let mut path = directory.join(format!("{}.{}", base_name, format.extension()));
+
+    if !path.exists() {
+        return path;
+    }
+
+    let mut suffix = 1;
+    loop {
+        path = directory.join(format!("{}_{}.{}", base_name, suffix, format.extension()));
+
+        if !path.exists() {
+            return path;
+        }
+
+        suffix += 1;
     }
 }
 
@@ -111,6 +216,49 @@ fn build_report_text(config: &Config) -> String {
     append_profiles_report(&mut report, config);
 
     report
+}
+
+fn build_report_markdown(config: &Config) -> String {
+    let mut report = String::new();
+    let summary = build_report_summary(config);
+
+    let _ = writeln!(report, "# LocalAccessGuard Report");
+    let _ = writeln!(report);
+    let _ = writeln!(report, "- Version: {}", VERSION);
+    let _ = writeln!(
+        report,
+        "- Generated: {}",
+        Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
+    let _ = writeln!(report);
+    append_markdown_summary(&mut report, &summary);
+
+    append_markdown_section(&mut report, "Windows Proxy", &section_windows_proxy());
+    append_markdown_section(&mut report, "Auto Proxy / PAC", &section_autoconfig());
+    append_markdown_section(&mut report, "WinHTTP Proxy", &section_winhttp());
+    append_markdown_network_info(&mut report);
+    append_markdown_udp_diagnostics(&mut report, config);
+    append_markdown_processes(&mut report, config);
+    append_markdown_profiles(&mut report, config);
+
+    report
+}
+
+fn build_report_json(config: &Config) -> Result<String, serde_json::Error> {
+    let report = JsonReport {
+        version: VERSION.to_string(),
+        generated: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        summary: build_report_summary(config),
+        windows_proxy: section_windows_proxy(),
+        auto_proxy: section_autoconfig(),
+        winhttp_proxy: section_winhttp(),
+        network_info: get_network_adapters(),
+        udp_diagnostics: run_udp_diagnostics(&config.udp_test_target),
+        known_network_tools: collect_process_report(config),
+        profiles: collect_profile_report(config),
+    };
+
+    serde_json::to_string_pretty(&report)
 }
 
 fn build_report_summary(config: &Config) -> ReportSummary {
@@ -186,10 +334,260 @@ fn add_process_warnings(summary: &mut ReportSummary, config: &Config) {
 
         if process == "warp-svc.exe" && config.show_warp_warning {
             summary.add_warning("Cloudflare WARP service is running in the background.");
+            logger::warning(
+                config,
+                "Cloudflare WARP service is running in the background.",
+            );
         } else if process != "warp-svc.exe" {
             summary.add_warning(&format!("DPI/proxy tool process is active: {}", process));
         }
     }
+}
+
+fn append_markdown_summary(report: &mut String, summary: &ReportSummary) {
+    let _ = writeln!(report, "## Summary");
+    let _ = writeln!(report);
+    let _ = writeln!(report, "- Profiles tested: {}", summary.profiles_tested);
+    let _ = writeln!(report, "- DNS failures: {}", summary.dns_failures);
+    let _ = writeln!(report, "- TCP failures: {}", summary.tcp_failures);
+    let _ = writeln!(report, "- Warnings: {}", summary.warnings);
+    let _ = writeln!(report, "- Overall status: {}", summary.overall_status());
+    let _ = writeln!(report, "- Reasons:");
+
+    if summary.reasons.is_empty() {
+        let _ = writeln!(report, "  - None.");
+    } else {
+        for reason in &summary.reasons {
+            let _ = writeln!(report, "  - {}", reason);
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_markdown_section(report: &mut String, heading: &str, text: &str) {
+    let _ = writeln!(report, "## {}", heading);
+    let _ = writeln!(report);
+
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let _ = writeln!(report, "- {}", line);
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_markdown_network_info(report: &mut String) {
+    let _ = writeln!(report, "## Network Info");
+    let _ = writeln!(report);
+    let adapters = get_network_adapters();
+
+    if adapters.is_empty() {
+        let _ = writeln!(report, "- Adapter Name: Unknown");
+        let _ = writeln!(report, "- Description: Unknown");
+        let _ = writeln!(report, "- DHCP Enabled: Unknown");
+        let _ = writeln!(report, "- IPv4 Address: Unknown");
+        let _ = writeln!(report, "- Default Gateway: Unknown");
+        let _ = writeln!(report, "- DNS Servers: Unknown");
+        let _ = writeln!(report);
+        return;
+    }
+
+    for adapter in adapters {
+        let dns_servers = if adapter.dns_servers.is_empty() {
+            "Unknown".to_string()
+        } else {
+            adapter.dns_servers.join(", ")
+        };
+
+        let _ = writeln!(
+            report,
+            "- Adapter Name: {}",
+            known_or_unknown(&adapter.name)
+        );
+        let _ = writeln!(
+            report,
+            "  - Description: {}",
+            known_or_unknown(&adapter.description)
+        );
+        let _ = writeln!(
+            report,
+            "  - DHCP Enabled: {}",
+            known_or_unknown(&adapter.dhcp_enabled)
+        );
+        let _ = writeln!(
+            report,
+            "  - IPv4 Address: {}",
+            known_or_unknown(&adapter.ipv4_address)
+        );
+        let _ = writeln!(
+            report,
+            "  - Default Gateway: {}",
+            known_or_unknown(&adapter.default_gateway)
+        );
+        let _ = writeln!(report, "  - DNS Servers: {}", dns_servers);
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_markdown_udp_diagnostics(report: &mut String, config: &Config) {
+    let diagnostics = run_udp_diagnostics(&config.udp_test_target);
+    let mut text = String::new();
+    write_udp_diagnostics(&mut text, &diagnostics, &config.udp_test_target);
+    append_markdown_section(report, "UDP Diagnostics", &text);
+}
+
+fn append_markdown_processes(report: &mut String, config: &Config) {
+    let _ = writeln!(report, "## Known Network Tools");
+    let _ = writeln!(report);
+
+    for process in collect_process_report(config) {
+        let status = if process.running {
+            "Running"
+        } else {
+            "Not running"
+        };
+        let _ = writeln!(report, "- {}: {}", process.name, status);
+
+        for warning in process.warnings {
+            let _ = writeln!(report, "  - Warning: {}", warning);
+        }
+    }
+
+    let _ = writeln!(report);
+}
+
+fn append_markdown_profiles(report: &mut String, config: &Config) {
+    let profiles = collect_profile_report(config);
+
+    if profiles.is_empty() {
+        let _ = writeln!(report, "## Profiles");
+        let _ = writeln!(report);
+        let _ = writeln!(
+            report,
+            "- No valid profiles found in {}\\*.json",
+            config.profile_directory
+        );
+        let _ = writeln!(report);
+        return;
+    }
+
+    for profile in profiles {
+        let _ = writeln!(report, "## {}", profile.name);
+        let _ = writeln!(report);
+
+        for domain in profile.domains {
+            let _ = writeln!(report, "- DNS {}: {}", domain.domain, domain.dns);
+        }
+
+        let _ = writeln!(
+            report,
+            "- TCP 443 {}: {}",
+            profile.tcp_test_domain, profile.tcp_443
+        );
+        let _ = writeln!(report);
+    }
+}
+
+fn section_windows_proxy() -> String {
+    let mut report = String::new();
+    append_windows_proxy_report(&mut report);
+    strip_section_heading(&report)
+}
+
+fn section_autoconfig() -> String {
+    let mut report = String::new();
+    append_autoconfig_report(&mut report);
+    strip_section_heading(&report)
+}
+
+fn section_winhttp() -> String {
+    let mut report = String::new();
+    append_winhttp_report(&mut report);
+    strip_section_heading(&report)
+}
+
+fn strip_section_heading(text: &str) -> String {
+    text.lines()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn collect_process_report(config: &Config) -> Vec<ProcessReport> {
+    let known_processes = [
+        "warp-svc.exe",
+        "Cloudflare WARP.exe",
+        "goodbyedpi.exe",
+        "bypax-proxy.exe",
+        "BypaxDPI.exe",
+        "Discord.exe",
+        "RobloxPlayerBeta.exe",
+    ];
+
+    let output = Command::new("tasklist").output();
+    let text = match output {
+        Ok(result) => String::from_utf8_lossy(&result.stdout).to_lowercase(),
+        Err(_) => String::new(),
+    };
+
+    let mut processes = Vec::new();
+
+    for process in known_processes {
+        let running = text.contains(&process.to_lowercase());
+        let mut warnings = Vec::new();
+
+        if running && process == "warp-svc.exe" && config.show_warp_warning {
+            let warning = "Cloudflare WARP service is running in the background.".to_string();
+            logger::warning(config, &warning);
+            warnings.push(warning);
+        }
+
+        if running
+            && (process == "goodbyedpi.exe"
+                || process == "bypax-proxy.exe"
+                || process == "BypaxDPI.exe")
+        {
+            warnings.push(format!("DPI/proxy tool process is active: {}", process));
+        }
+
+        processes.push(ProcessReport {
+            name: process.to_string(),
+            running,
+            warnings,
+        });
+    }
+
+    processes
+}
+
+fn collect_profile_report(config: &Config) -> Vec<ProfileReport> {
+    let profiles = load_report_profiles(config);
+    let mut report_profiles = Vec::new();
+
+    for profile in profiles {
+        let mut domains = Vec::new();
+
+        for domain in &profile.domains {
+            domains.push(DomainReport {
+                domain: domain.clone(),
+                dns: get_dns_result(domain),
+            });
+        }
+
+        let tcp_443 = get_tcp_443_result(&profile.tcp_test_domain);
+
+        report_profiles.push(ProfileReport {
+            name: profile.name,
+            domains,
+            tcp_test_domain: profile.tcp_test_domain,
+            tcp_443,
+        });
+    }
+
+    report_profiles
 }
 
 fn add_profile_results(summary: &mut ReportSummary, config: &Config) {

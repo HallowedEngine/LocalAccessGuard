@@ -1,9 +1,9 @@
 use crate::config::Config;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Profile {
     pub(crate) name: String,
     pub(crate) domains: Vec<String>,

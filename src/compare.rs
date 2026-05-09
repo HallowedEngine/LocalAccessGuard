@@ -1,3 +1,5 @@
+use crate::config::Config;
+use crate::logger;
 use std::fs;
 
 #[derive(Debug)]
@@ -10,10 +12,14 @@ struct ParsedReportSummary {
     reasons: Vec<String>,
 }
 
-pub fn compare_reports(old_report_path: &str, new_report_path: &str) {
+pub fn compare_reports(old_report_path: &str, new_report_path: &str, config: &Config) {
     let old_text = match fs::read_to_string(old_report_path) {
         Ok(text) => text,
         Err(err) => {
+            logger::error(
+                config,
+                &format!("failed to read report file: {}", old_report_path),
+            );
             println!(
                 "[FAILED] Failed to read old report '{}': {}",
                 old_report_path, err
@@ -25,6 +31,10 @@ pub fn compare_reports(old_report_path: &str, new_report_path: &str) {
     let new_text = match fs::read_to_string(new_report_path) {
         Ok(text) => text,
         Err(err) => {
+            logger::error(
+                config,
+                &format!("failed to read report file: {}", new_report_path),
+            );
             println!(
                 "[FAILED] Failed to read new report '{}': {}",
                 new_report_path, err

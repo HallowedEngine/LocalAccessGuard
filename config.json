@@ -1,7 +1,10 @@
 {
   "profile_directory": "profiles",
+  "group_directory": "groups",
   "report_directory": "reports",
+  "log_directory": "logs",
   "default_profiles": ["discord", "roblox"],
   "udp_test_target": "1.1.1.1:53",
-  "show_warp_warning": true
+  "show_warp_warning": true,
+  "enable_logging": true
 }

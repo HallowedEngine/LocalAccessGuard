@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::logger;
 use std::process::Command;
 
 fn check_windows_proxy() {
@@ -124,6 +125,10 @@ pub(crate) fn check_processes(config: &Config) {
                     if process == "warp-svc.exe" && config.show_warp_warning {
                         println!(
                             "    [WARNING] Cloudflare WARP service is running in the background."
+                        );
+                        logger::warning(
+                            config,
+                            "Cloudflare WARP service is running in the background.",
                         );
                     }
 
@@ -306,7 +311,8 @@ pub fn status(config: &Config) {
     check_processes(config);
 }
 
-pub fn restore() {
+pub fn restore(config: &Config) {
+    logger::info(config, "restore start");
     println!("=== LocalAccessGuard Restore ===");
     println!();
 
@@ -347,4 +353,5 @@ pub fn restore() {
     println!();
     println!("[OK] Restore completed.");
     println!("[INFO] Run `cargo run -- status` again to verify.");
+    logger::info(config, "restore completed");
 }
