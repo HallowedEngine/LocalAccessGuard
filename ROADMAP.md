@@ -10,13 +10,13 @@ Versions v1.4.0 through v1.9.0 are intentionally skipped so the project can move
 
 ## Current Milestone
 
-v2.1.0 is the current milestone and focuses on report, log, and group improvements: unique report filenames, simple local logging, report format options, and profile groups.
+v2.2.0 is the current milestone and is the Windows inspection pack: read-only firewall inspection, read-only service inspection, and safe system doctor suggestions.
 
 ## Planned v2.x Ideas
 
 - Cleaner error handling
 - Easier testing
-- Firewall inspection
+- More structured inspection summaries
 
 ## Future v3.0.0 Milestone
 

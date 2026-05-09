@@ -2,15 +2,15 @@
 
 LocalAccessGuard is a Rust-based Windows network diagnostic, cleanup, profile-checking, and reporting CLI utility.
 
-It checks Windows proxy-related settings, detects known network tools, runs profile-based DNS/TCP diagnostics, inspects network adapter and DNS configuration, runs basic UDP diagnostics, exports timestamped reports, and can safely clean stale proxy configuration.
+It checks Windows proxy-related settings, detects known network tools, runs profile-based DNS/TCP diagnostics, inspects network adapter and DNS configuration, runs basic UDP diagnostics, exports timestamped reports, inspects firewall rules and services read-only, and can safely clean stale proxy configuration.
 
 ## Current Version
 
-v2.1.0
+v2.2.0
 
 ## Stable Scope
 
-LocalAccessGuard is a stable Windows network diagnostic CLI focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, and report comparison.
+LocalAccessGuard is a stable Windows network diagnostic CLI focused on proxy/PAC/WinHTTP cleanup, profile-based DNS/TCP diagnostics, report generation, report comparison, and read-only Windows inspection.
 
 It is:
 
@@ -18,6 +18,7 @@ It is:
 - a cleanup utility for proxy/PAC/WinHTTP settings
 - a profile-based DNS/TCP diagnostic tool
 - a report generator and comparison utility
+- a read-only Windows firewall and service inspection utility
 
 It is not:
 
@@ -43,6 +44,9 @@ It is not:
 - Plain text, JSON, and Markdown report formats
 - Simple append-only local logging
 - Profile groups for grouped doctor checks
+- Read-only Windows Firewall rule inspection
+- Read-only Windows service inspection
+- Safe system-level diagnosis and suggestions
 - Clear CLI help aliases and readable terminal status prefixes
 
 ## Commands
@@ -60,6 +64,9 @@ cargo run -- groups
 cargo run -- compare <old_report> <new_report>
 cargo run -- netinfo
 cargo run -- udpcheck
+cargo run -- firewall-check
+cargo run -- services
+cargo run -- doctor-system
 cargo run -- config
 cargo run -- help
 ```
@@ -95,6 +102,28 @@ cargo run -- report --format md
 ```
 
 Report filenames include millisecond timestamps and add a numeric suffix if a matching file already exists.
+
+## Windows Inspection
+
+Inspect relevant Windows Firewall rules without changing firewall configuration:
+
+```bash
+cargo run -- firewall-check
+```
+
+Inspect relevant Windows services without starting, stopping, enabling, disabling, or deleting services:
+
+```bash
+cargo run -- services
+```
+
+Run a system-level diagnosis with safe, non-destructive suggestions:
+
+```bash
+cargo run -- doctor-system
+```
+
+These commands are inspection-only. Normal reports do not automatically include firewall or service sections in v2.2.0.
 
 ## Logs
 
@@ -147,6 +176,7 @@ The release executable is created at `target/release/LocalAccessGuard.exe`.
 
 ## Version History
 
+- v2.2.0: Added read-only firewall inspection, service inspection, and system doctor suggestions.
 - v2.1.0: Added unique report filenames, local logging, report formats, and profile groups.
 - v2.0.0: Split code into smaller source modules for easier maintenance.
 - v1.3.0: Final v1 polish before v2.0 modular refactor.

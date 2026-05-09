@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.2.0
+
+### Added
+- `firewall-check` command for read-only Windows Firewall inspection
+- `services` command for read-only Windows service inspection
+- `doctor-system` command for safe system-level diagnosis and suggestions
+
+### Changed
+- Updated project version to v2.2.0
+- Updated help and documentation for Windows inspection commands
+
+### Notes
+- Firewall inspection is read-only
+- Service inspection is read-only
+- `doctor-system` does not change system settings
+- GUI, firewall repair, service control, VPN, proxy engine, DPI bypass, and packet manipulation are not part of this version
+
 ## v2.1.0
 
 ### Added

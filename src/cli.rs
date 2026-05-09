@@ -1,11 +1,14 @@
 use crate::VERSION;
 use crate::compare::compare_reports;
 use crate::config::{Config, EffectiveConfig};
+use crate::doctor_system::doctor_system;
+use crate::firewall::firewall_check;
 use crate::groups::{doctor_group, groups};
 use crate::logger;
 use crate::network::{doctor_profile, netinfo, udpcheck};
 use crate::profiles::{profiles, validate_profiles};
 use crate::report::{ReportFormat, report};
+use crate::services::services;
 use crate::windows::{restore, status};
 
 pub fn handle_args(args: &[String], effective_config: EffectiveConfig) {
@@ -98,6 +101,21 @@ pub fn handle_args(args: &[String], effective_config: EffectiveConfig) {
             logger::info(&config, "command=udpcheck");
             udpcheck(&config);
         }
+        "firewall-check" => {
+            let config = config_with_warning(effective_config);
+            logger::info(&config, "command=firewall-check");
+            firewall_check(&config);
+        }
+        "services" => {
+            let config = config_with_warning(effective_config);
+            logger::info(&config, "command=services");
+            services(&config);
+        }
+        "doctor-system" => {
+            let config = config_with_warning(effective_config);
+            logger::info(&config, "command=doctor-system");
+            doctor_system(&config);
+        }
         "config" => {
             let config = config_with_warning(effective_config);
             logger::info(&config, "command=config");
@@ -145,6 +163,9 @@ fn print_help() {
     println!("  compare <old_report> <new_report> Compare two diagnostic reports");
     println!("  netinfo                         Show active adapter and DNS information");
     println!("  udpcheck                        Run basic UDP diagnostics");
+    println!("  firewall-check                  Inspect relevant Windows Firewall rules");
+    println!("  services                        Inspect relevant Windows services");
+    println!("  doctor-system                   Show system-level diagnosis and suggestions");
     println!("  config                          Show effective configuration");
     println!("  help                            Show this help screen");
     println!();
@@ -155,6 +176,9 @@ fn print_help() {
     println!("  LocalAccessGuard report");
     println!("  LocalAccessGuard report --format json");
     println!("  LocalAccessGuard compare reports\\old.txt reports\\new.txt");
+    println!("  LocalAccessGuard firewall-check");
+    println!("  LocalAccessGuard services");
+    println!("  LocalAccessGuard doctor-system");
 }
 
 fn parse_report_format(args: &[String]) -> Result<ReportFormat, String> {
